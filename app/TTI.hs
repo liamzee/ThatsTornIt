@@ -1,5 +1,8 @@
 module TTI where
 
+import Control.Category hiding ((.))
+import Data.Function ((&))
+
 --Basic types, type synonyms.
 
 data Card =
@@ -26,8 +29,10 @@ type DealerCards = [ Card ]
 
 type Players = [ Card ]
 
+--A list of cards that comprise a deck. Note absence of ReducedAce.
+
 deck :: DealerCards
-deck = [Ace .. Ten_Jack_Queen_King]
+deck = [Two .. Ace]
 
 
 
@@ -83,22 +88,28 @@ dealerHandsSix = filter ( (==6) . length ) dealerHands
 dealerHands :: [DealerCards]
 dealerHands =
   
-  appendNewCard . appendNewCard . appendNewCard .
-  appendNewCard. appendNewCard $ pure <$> deck
+  pure <$> deck & ( appendNewCard >>> appendNewCard >>>
+  appendNewCard >>> appendNewCard >>> appendNewCard )
 
-
+-- | Obviously appends a new card, but starts by splitting the existing deck
+-- into the parts where a dealer won't hit (under stand on soft 17)
+-- and parts where a dealer would hit, "filter valueCheck 17"
 
 appendNewCard :: [[Card]] -> [[Card]]
 appendNewCard preExistingDeck =
   
-    filter ( valueCheck 17 (>=) ) preExistingDeck ++
+    filter ( valueCheck 17 (<=) ) preExistingDeck
+
+    <>
+
+    ( filter ( valueCheck 17 (>) ) preExistingDeck &
+
+    ( ( ( (:) <$> deck ) <*>) >>> filter ( valueCheck 21 (>=) ) ) )
+
+    
 
 
-
-    ( filter ( valueCheck 21 (>=)) . ( ( (:) <$> deck ) <*>) .
-
-    filter ( valueCheck 17 (>) ) $ preExistingDeck )
-
+    
 --Note that the current reduced-point implementation of valueCheck
 --puts the value to be compared to on the left. 
 
@@ -108,14 +119,14 @@ valueCheck value boolType = boolType value . cardsToValue
 
 
 cardsToValue :: [Card] -> Int
-cardsToValue cards = if basicValueOfCards cards >= 21
+cardsToValue cards = if basicValueOfCards cards > 21
   then checkForAces cards
   else basicValueOfCards cards
   
 
 
 basicValueOfCards :: [Card] -> Int
-basicValueOfCards = foldr ( (+) . (+1) . fromEnum ) 0
+basicValueOfCards = foldr ( (+) . (+1) . fromEnum ) (0)
 
 
 
@@ -128,6 +139,5 @@ checkForAces cards = if elem Ace cards
 
 reduceAce :: [Card] -> [Card]
 reduceAce [] = []
-reduceAce [Ace] = [ReducedAce]
 reduceAce (Ace:xs) = ReducedAce:xs
 reduceAce (x:xs) = x : reduceAce xs
