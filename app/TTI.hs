@@ -3,6 +3,7 @@ module TTI where
 
 import Control.Category hiding ((.))
 import Data.Function ((&))
+import Data.List (delete)
 
 --Basic types, type synonyms.
 
@@ -22,11 +23,13 @@ data Card =
     
     deriving (Eq, Enum, Show)
 
-type CardsShown = ( PlayerCards , DealerCards )
+type CardsInPlay = ( PlayerCards , DealerCards )
 
 type PlayerCards = [ Card ]
 
 type DealerCards = [ Card ]
+
+type CardsRevealed = [ Card ]
 
 type Players = [ Card ]
 
@@ -41,10 +44,10 @@ deck = [Two .. Ace]
 
 
 
-judgeInitial :: CardsShown -> ProbabilityOfWinning
+judgeInitial :: CardsInPlay -> ProbabilityOfWinning
 judgeInitial cards = max doubleCards $ max splitCards $ max ( hit cards ) ( stand cards )
 
-stand :: CardsShown -> ProbabilityOfWinning
+stand :: CardsInPlay -> ProbabilityOfWinning
 stand cards = calcDealer cards
 
 hit = undefined
@@ -55,15 +58,15 @@ doubleCards = undefined
 
 --Stuff used to calculate probability of winning after standing, given some CardsShown.
 
-calcDealer :: CardsShown -> ProbabilityOfWinning
-calcDealer cardsShown =
+calcDealer :: CardsInPlay -> ProbabilityOfWinning
+calcDealer cardsInPlay =
   
-  sum . map (probabilityOfWinning cardsShown) $
-  filterBasedOnCardsShown cardsShown dealerHands
+  sum . map (probabilityOfWinning cardsInPlay) $
+  filterBasedOnCardsShown cardsInPlay dealerHands
 
 
 
-filterBasedOnCardsShown :: (a, [Card]) -> [[Card]] -> [[Card]]
+filterBasedOnCardsShown :: ( a , [ Card ] ) -> [ [ Card ] ] -> [ [ Card ] ]
 filterBasedOnCardsShown (_ , [dealerFaceUpCard]) = filter (isLastCard dealerFaceUpCard)
 
 
@@ -77,17 +80,39 @@ isLastCard cardToBeChecked cardsInHand = case cardsInHand of
 
 
 
-collapseCardsShown :: CardsShown -> [Card]
-collapseCardsShown ( playerCards , dealerCards ) = playerCards ++ dealerCards
+collapseCardsInPlay :: CardsInPlay -> [Card]
+collapseCardsInPlay ( playerCards , dealerCards ) = playerCards <> dealerCards
 
 
 
-probabilityOfWinning :: CardsShown -> DealerCards -> ProbabilityOfWinning
-probabilityOfWinning (collapseCardsShown -> cardsShown) = undefined . reverse
+probabilityOfWinning :: CardsInPlay -> DealerCards -> ProbabilityOfWinning
+probabilityOfWinning (collapseCardsInPlay -> cardsShown) = calculateProbabilityOfWinning cardsShown . reverse
 
 
 
-calculateProbabilityOfWinning cardsShown = case of
+calculateProbabilityOfWinning :: [Card] -> DealerCards -> ProbabilityOfWinning
+calculateProbabilityOfWinning cardsShown dealerCards = case dealerCards of
+    
+    [] -> 1
+    Ten_Jack_Queen_King:xs -> probabilityTenJackQueenKing cardsShown *
+        calculateProbabilityOfWinning (Ten_Jack_Queen_King:cardsShown) xs
+    other:xs -> probabilityOther cardsShown other *
+        calculateProbabilityOfWinning (other:cardsShown) xs
+        
+  where
+
+    numberOfCardsIn cardsShown specificCard =
+        
+        if notElem specificCard cardsShown
+            then 0
+            else 1 + numberOfCardsIn 
+            (delete specificCard cardsShown) specificCard
+
+    probabilityTenJackQueenKing cardsShown =
+      128 - numberOfCardsIn cardsShown Ten_Jack_Queen_King / 416
+
+    probabilityOther cardsShown other =
+      32 - numberOfCardsIn cardsShown other / 416
 
 
 
