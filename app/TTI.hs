@@ -48,7 +48,7 @@ judgeInitial :: CardsInPlay -> ProbabilityOfWinning
 judgeInitial cards = max doubleCards $ max splitCards $ max ( hit cards ) ( stand cards )
 
 stand :: CardsInPlay -> ProbabilityOfWinning
-stand cards = calcDealer cards
+stand cards = calcDealer cards undefined
 
 hit = undefined
 
@@ -56,18 +56,41 @@ splitCards = undefined
 
 doubleCards = undefined
 
---Stuff used to calculate probability of winning after standing, given some CardsShown.
 
-calcDealer :: CardsInPlay -> ProbabilityOfWinning
+
+--Stuff used to calculate probability of winning after standing,
+--given some cardsInPlay.
+
+--Currently, very bad bugs using pointsChooser and Natural vs Ace / King as test pieces.
+--Same occurs with calculateProbabilityOfWinning.
+
+pointsChooser :: CardsInPlay -> ProbabilityOfWinning
+pointsChooser cardsInPlay@( playerCards , dealerFaceUp ) 
+
+    | length playerCards == 6 = error "executeSixCardCharlieLogic"
+    | elem playerCards [ [Ten_Jack_Queen_King, Ace] , [Ace, Ten_Jack_Queen_King] ]
+      = calcDealer cardsInPlay [ playerCards , reverse playerCards ]
+    | cardsToValue playerCards == 21 = error "execute21ValueLogic"
+    | cardsToValue playerCards == 20 = error "execute20ValueLogic"
+    | cardsToValue playerCards == 19 = error "execute19ValueLogic"
+    | cardsToValue playerCards == 18 = error "execute18ValueLogic"
+    | cardsToValue playerCards == 17 = error "execute17ValueLogic"
+    | cardsToValue playerCards < 17 = error "executeBelow17Logic"
+
+
+
+calcDealer :: CardsInPlay -> [DealerCards] -> ProbabilityOfWinning
 calcDealer cardsInPlay =
   
-  sum . map (probabilityOfWinning cardsInPlay) $
-  filterBasedOnCardsShown cardsInPlay dealerHands
+  sum . map (probabilityOfWinning cardsInPlay) .
+  filterBasedOnCardsShown cardsInPlay
 
 
 
 filterBasedOnCardsShown :: ( a , [ Card ] ) -> [ [ Card ] ] -> [ [ Card ] ]
-filterBasedOnCardsShown (_ , [dealerFaceUpCard]) = filter (isLastCard dealerFaceUpCard)
+filterBasedOnCardsShown (_ , [dealerFaceUpCard]) =
+  
+    filter (isLastCard dealerFaceUpCard)
 
 
 
@@ -86,7 +109,9 @@ collapseCardsInPlay ( playerCards , dealerCards ) = playerCards <> dealerCards
 
 
 probabilityOfWinning :: CardsInPlay -> DealerCards -> ProbabilityOfWinning
-probabilityOfWinning (collapseCardsInPlay -> cardsShown) = calculateProbabilityOfWinning cardsShown . reverse
+probabilityOfWinning (collapseCardsInPlay -> cardsShown) =
+  
+    calculateProbabilityOfWinning cardsShown . reverse
 
 
 
@@ -103,16 +128,13 @@ calculateProbabilityOfWinning cardsShown dealerCards = case dealerCards of
 
     numberOfCardsIn cardsShown specificCard =
         
-        if notElem specificCard cardsShown
-            then 0
-            else 1 + numberOfCardsIn 
-            (delete specificCard cardsShown) specificCard
+        fromIntegral . length . filter (== specificCard) $ cardsShown
 
     probabilityTenJackQueenKing cardsShown =
-      128 - numberOfCardsIn cardsShown Ten_Jack_Queen_King / 416
+      ( 128 - numberOfCardsIn cardsShown Ten_Jack_Queen_King ) / 416
 
     probabilityOther cardsShown other =
-      32 - numberOfCardsIn cardsShown other / 416
+      ( 32 - numberOfCardsIn cardsShown other ) / 416
 
 
 
@@ -165,20 +187,26 @@ dealerHands = iterate appendNewCard (pure <$> deck) !! 5
 
 
 
--- | Appends a new card, but starts by splitting the existing deck
--- into the parts where a dealer won't hit (under stand on soft 17)
--- and parts where a dealer would hit, "filter valueCheck 17"
+-- | Appends a new card to a set of cards, but starts by splitting
+-- the existing deck into the parts where a dealer won't hit
+-- (under stand on soft 17) and parts where a dealer would hit,
+-- "filter valueCheck 17"
 
 appendNewCard :: [[Card]] -> [[Card]]
-appendNewCard preExistingDeck =
-  
-    filter ( valueCheck 17 (<=) ) preExistingDeck
+appendNewCard preExistingCards =
 
-    <>
+    let dealerStandCards = filter ( valueCheck 17 (<=) ) preExistingCards
+        dealerHitCards =
+          
+          ( filter ( valueCheck 21 (>=) ) $ ( (:) <$> deck ) <*>
+          filter ( valueCheck 17 (>) ) preExistingCards ) in
 
-    ( filter ( valueCheck 17 (>) ) preExistingDeck &
+          --Last value filters preExistingCards based on player hitting,
+          --starting at the end. The ((:) <$> deck) <*> adds cards, then
+          --the filter before it removes combinations that would cause the
+          --dealer to go bust.
 
-    ( ( ( (:) <$> deck ) <*>) >>> filter ( valueCheck 21 (>=) ) ) )
+    dealerStandCards <> dealerHitCards
 
     
 
