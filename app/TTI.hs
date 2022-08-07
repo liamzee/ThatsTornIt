@@ -1,11 +1,21 @@
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE LambdaCase, PatternSynonyms #-}
 module TTI where
 
-import Control.Category hiding ((.))
+import Data.List (intersect, isPrefixOf)
+import Control.Applicative ((<**>))
 import Data.Function ((&))
-import Data.List (delete)
+import Data.Functor ((<&>))
 
 --Basic types, type synonyms.
+
+data Action =
+
+      Split
+    | DoubleAction
+    | Hit
+    | Stand
+
+    deriving (Eq, Ord)
 
 data Card =
 
@@ -23,6 +33,11 @@ data Card =
     
     deriving (Eq, Enum, Show)
 
+-- Pattern synonym for Ten_Jack_Queen_King added for debugging purposes.
+
+pattern Tens :: Card
+pattern Tens = Ten_Jack_Queen_King
+
 type CardsInPlay = ( PlayerCards , DealerCards )
 
 type PlayerCards = [ Card ]
@@ -33,21 +48,33 @@ type CardsRevealed = [ Card ]
 
 type Players = [ Card ]
 
-type ProbabilityOfWinning = Double
+type Probability = Double
+
+type ExpectedValue = Double
+
+type Suggestion = (ExpectedValue, Action)
 
 
 
---A list of cards that comprise a deck. Note absence of ReducedAce.
+-- | A list of cards that comprise a rank, or all cards of
+-- the same suit. Note absence of ReducedAce.
 
-deck :: DealerCards
-deck = [Two .. Ace]
+allRanks :: [Card]
+allRanks = [ Two .. Ace ]
+
+-- | Hands that are "naturals"
+
+natural :: [[Card]]
+natural = [ [ Ace , Ten_Jack_Queen_King ] , [ Ten_Jack_Queen_King , Ace ] ]
 
 
 
-judgeInitial :: CardsInPlay -> ProbabilityOfWinning
-judgeInitial cards = max doubleCards $ max splitCards $ max ( hit cards ) ( stand cards )
+judgeInitial :: CardsInPlay -> Probability
+judgeInitial cards = maximum [ doubleCards , splitCards , surrender , ( hit cards ) , ( stand cards ) ]
+  where
+    surrender = 0.50
 
-stand :: CardsInPlay -> ProbabilityOfWinning
+stand :: CardsInPlay -> Probability
 stand cards = calcDealer cards undefined
 
 hit = undefined
@@ -56,85 +83,145 @@ splitCards = undefined
 
 doubleCards = undefined
 
+evaluateCards :: CardsInPlay -> Suggestion
+evaluateCards cardsInPlay =
+  
+    max (calculateHits cardsInPlay) (calculateStands cardsInPlay)
+
+calculateHits :: CardsInPlay -> Suggestion
+calculateHits cardsInPlay = evaluateCards cardsInPlay
+
+calculateStands :: CardsInPlay -> Suggestion
+calculateStands cardsInPlay = ( calculateStandEV cardsInPlay , Stand )
+
+appendNewCardPlayer :: CardsInPlay -> [ CardsInPlay ]
+appendNewCardPlayer ( playerCards , dealerFaceUp ) =
+  
+    fmap (flip (,) dealerFaceUp) . filter (valueCheck 21 (>=)) $
+    (pure playerCards) <**> (flip (++) <$> pure <$> allRanks )
 
 
---Stuff used to calculate probability of winning after standing,
---given some cardsInPlay.
+returnAnnotatedMax :: [Suggestion] -> Suggestion
+returnAnnotatedMax = maximum
+  
 
---Currently, very bad bugs using pointsChooser and Natural vs Ace / King as test pieces.
---Same occurs with calculateProbabilityOfWinning.
 
-pointsChooser :: CardsInPlay -> ProbabilityOfWinning
-pointsChooser cardsInPlay@( playerCards , dealerFaceUp ) 
+--Finally have the calculateStandEV calculations partially set up, wherein the
 
-    | length playerCards == 6 = error "executeSixCardCharlieLogic"
-    | elem playerCards [ [Ten_Jack_Queen_King, Ace] , [Ace, Ten_Jack_Queen_King] ]
-      = calcDealer cardsInPlay [ playerCards , reverse playerCards ]
-    | cardsToValue playerCards == 21 = error "execute21ValueLogic"
-    | cardsToValue playerCards == 20 = error "execute20ValueLogic"
-    | cardsToValue playerCards == 19 = error "execute19ValueLogic"
-    | cardsToValue playerCards == 18 = error "execute18ValueLogic"
-    | cardsToValue playerCards == 17 = error "execute17ValueLogic"
+calculateStandEV :: CardsInPlay -> ExpectedValue
+calculateStandEV cardsInPlay@( playerCards , dealerFaceUp ) 
+
+{- Basic formula for calculating stand EV is:
+  
+  probability of tie * 1 +
+  probability of loss * 0 +
+  probability of win * (win yield)
+  
+  This is equivalent to, given that:
+
+  probability of win = 1 - probability of tie - probability of loss
+
+  win yield - (probability of tie * win yield) - (probability of loss * winyield)
+
+  Factoring it further, the total calculation comes out to:
+
+
+
+  win yield + (probability of tie * (1 - win yield)) - probability of loss * win yield
+  
+  -}
+
+    | elem playerCards natural =
+      
+      2.5 - 1.5 * (calcDealer cardsInPlay dealerHandsNatural)
+
+-- Note that naturals take precedence over 6 card charlie.
+
+    | length playerCards == 6, playerValue <- cardsToValue playerCards = error "executeSixCardCharlieLogic"
+
+{- tieCase * 1 + loseCase * 0 + (1-tieCase-loseCase) * 2 for the EV when the player gets 21 value
+without 6 card charlie, where x is the odds of tying at 21, y is the
+odds of losing to 6 card charlie or naturals. 
+
+Mathematically, this factors out to (2-2tieCase-2loseCase) +x, or 2-2loseCase-tiecase. -}
+
+    | cardsToValue playerCards == 21 =
+      
+      2 - 2 * calcDealer cardsInPlay dealerHandsSix -
+      calcDealer cardsInPlay (dealerHands21 <> dealerHandsNatural)
+
+{- Same as above, except x = dealerHands for 20, y now includes
+   dealerHands for 21-}
+
+    | cardsToValue playerCards == 20 =
+
+      2 - 2 *
+      (calcDealer cardsInPlay (dealerHandsSix <> dealerHands21)) -
+      calcDealer cardsInPlay dealerHands20
+
+{- Same pattern, I ought to just refactor the entire set away into one. -}
+
+    | cardsToValue playerCards == 19 =
+
+      2 - 2 *
+      calcDealer cardsInPlay (dealerHandsSix <>
+      dealerHands21 <> dealerHands20) -
+      calcDealer cardsInPlay dealerHands19
+
+    | cardsToValue playerCards == 18 =
+
+      2 - 2 *
+      calcDealer cardsInPlay (dealerHandsSix <> dealerHands21 <>
+       dealerHands20 <> dealerHands19) -
+      calcDealer cardsInPlay dealerHands18
+
+    | cardsToValue playerCards == 17 =
+
+      2 - 2 *
+      calcDealer cardsInPlay (dealerHandsSix <> dealerHands21 <>
+      dealerHands20 <> dealerHands19 <> dealerHands18) -
+      calcDealer cardsInPlay dealerHands17
+
     | cardsToValue playerCards < 17 = error "executeBelow17Logic"
 
 
 
-calcDealer :: CardsInPlay -> [DealerCards] -> ProbabilityOfWinning
-calcDealer cardsInPlay =
+calcDealer :: CardsInPlay -> [DealerCards] -> Probability
+calcDealer ( playerCards , dealerFaceUp ) =
   
-  sum . map (probabilityOfWinning cardsInPlay) .
-  filterBasedOnCardsShown cardsInPlay
+    sum . map (probabilityOfDealerHand playerCards . safeTailThroughNil ) .
+    filter (isPrefixOf $ dealerFaceUp )
+
+  where safeTailThroughNil = \case
+
+          [] -> []
+          x:xs -> xs
 
 
-
-filterBasedOnCardsShown :: ( a , [ Card ] ) -> [ [ Card ] ] -> [ [ Card ] ]
-filterBasedOnCardsShown (_ , [dealerFaceUpCard]) =
-  
-    filter (isLastCard dealerFaceUpCard)
-
-
-
-isLastCard :: Card -> [Card] -> Bool
-isLastCard cardToBeChecked cardsInHand = case cardsInHand of
-
-    [] -> False
-    [lastCard] -> cardToBeChecked == lastCard
-    (exposedCard : otherCards ) -> isLastCard cardToBeChecked otherCards
-
-
-
-collapseCardsInPlay :: CardsInPlay -> [Card]
-collapseCardsInPlay ( playerCards , dealerCards ) = playerCards <> dealerCards
-
-
-
-probabilityOfWinning :: CardsInPlay -> DealerCards -> ProbabilityOfWinning
-probabilityOfWinning (collapseCardsInPlay -> cardsShown) =
-  
-    calculateProbabilityOfWinning cardsShown . reverse
-
-
-
-calculateProbabilityOfWinning :: [Card] -> DealerCards -> ProbabilityOfWinning
-calculateProbabilityOfWinning cardsShown dealerCards = case dealerCards of
+probabilityOfDealerHand :: [Card] -> DealerCards -> Probability
+probabilityOfDealerHand cardsInPlay dealerCards = case dealerCards of
     
     [] -> 1
-    Ten_Jack_Queen_King:xs -> probabilityTenJackQueenKing cardsShown *
-        calculateProbabilityOfWinning (Ten_Jack_Queen_King:cardsShown) xs
-    other:xs -> probabilityOther cardsShown other *
-        calculateProbabilityOfWinning (other:cardsShown) xs
+    Ten_Jack_Queen_King:xs -> probabilityTenJackQueenKing cardsInPlay *
+        probabilityOfDealerHand (Ten_Jack_Queen_King:cardsInPlay) xs
+    otherCard:xs -> probabilityOther cardsInPlay otherCard *
+        probabilityOfDealerHand (otherCard:cardsInPlay) xs
         
   where
 
-    numberOfCardsIn cardsShown specificCard =
-        
-        fromIntegral . length . filter (== specificCard) $ cardsShown
+    numberOfCardsIn specificCard =
+      
+        fromIntegral . length . intersect [specificCard]
 
-    probabilityTenJackQueenKing cardsShown =
-      ( 128 - numberOfCardsIn cardsShown Ten_Jack_Queen_King ) / 416
+    probabilityTenJackQueenKing cardsInPlay =
 
-    probabilityOther cardsShown other =
-      ( 32 - numberOfCardsIn cardsShown other ) / 416
+      ( 128 - numberOfCardsIn Ten_Jack_Queen_King cardsInPlay ) /
+       (416 - fromIntegral (length cardsInPlay) )
+
+    probabilityOther cardsInPlay other =
+
+      ( 32 - numberOfCardsIn other cardsInPlay ) /
+       (416 - fromIntegral (length cardsInPlay) )
 
 
 
@@ -168,6 +255,9 @@ dealerHands18 = filter (valueCheck 18 (==) ) dealerHandsNotSix
 dealerHands17 :: [DealerCards]
 dealerHands17 = filter (valueCheck 17 (==) ) dealerHandsNotSix
 
+dealerHandsNatural :: [DealerCards]
+dealerHandsNatural = natural
+
 
 
 --Dealer Six-Card-Charlie hands
@@ -183,7 +273,7 @@ dealerHandsSix = filter ( (==6) . length ) dealerHands
 -- of the action x times, where x is the index of the list starting from 0.
 
 dealerHands :: [DealerCards]
-dealerHands = iterate appendNewCard (pure <$> deck) !! 5
+dealerHands = iterate appendNewCardDealer (pure <$> allRanks) !! 5
 
 
 
@@ -192,14 +282,15 @@ dealerHands = iterate appendNewCard (pure <$> deck) !! 5
 -- (under stand on soft 17) and parts where a dealer would hit,
 -- "filter valueCheck 17"
 
-appendNewCard :: [[Card]] -> [[Card]]
-appendNewCard preExistingCards =
+appendNewCardDealer :: [[Card]] -> [[Card]]
+appendNewCardDealer preExistingCards =
 
     let dealerStandCards = filter ( valueCheck 17 (<=) ) preExistingCards
         dealerHitCards =
           
-          ( filter ( valueCheck 21 (>=) ) $ ( (:) <$> deck ) <*>
-          filter ( valueCheck 17 (>) ) preExistingCards ) in
+          filter ( valueCheck 21 (>=) ) $
+          ( filter ( valueCheck 17 (>) ) preExistingCards ) <**>
+          (flip (++) <$> pure <$> allRanks) in
 
           --Last value filters preExistingCards based on player hitting,
           --starting at the end. The ((:) <$> deck) <*> adds cards, then
@@ -207,16 +298,14 @@ appendNewCard preExistingCards =
           --dealer to go bust.
 
     dealerStandCards <> dealerHitCards
-
-    
-
-
     
 -- | Mostly avoids a direct call to cardsToValue, otherwise mostly identical to directly
 -- calling the Boolean. Note the invisible [Card] via eta reduction.
 
 valueCheck :: Int -> (Int -> Int -> Bool) -> [Card] -> Bool
 valueCheck value boolType = boolType value . cardsToValue 
+
+
 
 
 
