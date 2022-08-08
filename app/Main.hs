@@ -1,4 +1,6 @@
 module Main where
 
+import TTI
+
 main :: IO ()
-main = putStrLn "Hello, Haskell!"
+main = (print $ evaluateHitVsStand ([Two, Two], [Tens])) >> getChar >> pure ()

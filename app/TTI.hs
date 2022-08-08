@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase, PatternSynonyms #-}
+{-# LANGUAGE LambdaCase, PatternSynonyms, BangPatterns #-}
 module TTI where
 
 import Data.List (intersect, isPrefixOf, (\\))
@@ -72,6 +72,7 @@ natural = [ [ Ace , Ten_Jack_Queen_King ] , [ Ten_Jack_Queen_King , Ace ] ]
 -- Some safe versions of list functions, written with nil as a default value
 
 
+
 safeTailThroughNil :: [a] -> [a]
 safeTailThroughNil = \case
 
@@ -142,14 +143,23 @@ splitCards = undefined
 doubleCards = undefined-}
 
 
-{- Anna Kournikova! It looks good, but it's absolutely broken. I'm getting 90 minute computations on a single
-version, with an 4900 EV, and 1.4 TB of RAM used. -}
+{- Anna Kournikova! Might be broken, might not be broken, but is taking 33gb-1.5gb of ram to run. -}
 
 evaluateHitVsStand :: CardsInPlay -> Suggestion
 evaluateHitVsStand cardsInPlay =
-  
+
     evaluateHits (calculateStands cardsInPlay) $
-    evaluateHitVsStand <$> appendNewCardPlayer cardsInPlay
+    correctProbabilityCardsInPlay <$>
+    appendNewCardPlayer cardsInPlay
+
+  where
+    
+    correctProbabilityCardsInPlay :: CardsInPlay -> Suggestion
+    correctProbabilityCardsInPlay cardsInPlayNew =
+
+      ( probabilityOfPlayerDraw cardsInPlayNew *
+      ( fst . evaluateHitVsStand $ cardsInPlayNew )
+      , Hit )
 
 
 
@@ -160,11 +170,7 @@ evaluateHits stand hit = max stand (sum $ fst <$> hit, Hit)
 
 
 calculateStands :: CardsInPlay -> Suggestion
-calculateStands cardsInPlay = 
-  
-    ( probabilityOfPlayerDraw cardsInPlay *
-    calculateStandEV cardsInPlay ,
-     Stand )
+calculateStands cardsInPlay = (,) (calculateStandEV cardsInPlay) Stand
 
 
 
@@ -185,7 +191,7 @@ probabilityOfPlayerDraw cardsInPlay@(playerCards, dealerCards) =
 
         [] -> 1
         [Ten_Jack_Queen_King] -> probabilityTenJackQueenKing combinedCardsInPlay
-        [other] -> probabilityOther combinedCardsInPlay other
+        [otherCard] -> probabilityOther combinedCardsInPlay otherCard
 
 
 
@@ -233,8 +239,26 @@ For naturals:
 
 -}
 
-    | length playerCards == 6 =
+    | length playerCards == 6 = playerSixCardCharlieCalc
 
+    | elem playerCards natural =
+      
+        2.5 - 1.5 * calcDealer cardsInPlay dealerHandsNatural
+
+    | playerHandValue == 21 = playerNonNatural21Calc
+
+    | otherwise = playerNormalCalc
+
+  where
+
+
+
+    playerHandValue = cardsToValue playerCards
+
+
+
+    playerSixCardCharlieCalc = 
+      
         2 - 2 * calcDealer cardsInPlay
         
         (
@@ -247,10 +271,9 @@ For naturals:
         - calcDealer cardsInPlay
         (filter (valueCheck playerHandValue (==)) dealerHandsSix)
 
-    | elem playerCards natural =
-    2.5 - 1.5 * calcDealer cardsInPlay dealerHandsNatural
 
-    | playerHandValue == 21 =
+
+    playerNonNatural21Calc =
 
         2 - 2 * calcDealer cardsInPlay
         
@@ -264,7 +287,9 @@ For naturals:
         - calcDealer cardsInPlay
         ( dealerHands21 \\ dealerHandsNatural )
 
-    | otherwise = 
+
+
+    playerNormalCalc =
 
           2 - 2 * calcDealer cardsInPlay
       
@@ -279,9 +304,6 @@ For naturals:
           (filter (valueCheck playerHandValue (==)) dealerHandsNotSix)
 
 
-  where
-
-    playerHandValue = cardsToValue playerCards
 
 calcDealer :: CardsInPlay -> [DealerCards] -> Probability
 calcDealer ( playerCards , dealerFaceUp ) =

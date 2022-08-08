@@ -13,7 +13,7 @@ version:            0.1.0.0
 
 -- The license under which the package is released.
 -- license:
-author:             William Zhu
+author:             Liam Zhu
 maintainer:         Liam.Zhu@protonmail.com
 
 -- A copyright notice.
@@ -25,7 +25,7 @@ executable ThatsTornIt
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    -- other-modules:
+    other-modules:    TTI
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
