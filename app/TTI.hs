@@ -1,10 +1,8 @@
 {-# LANGUAGE LambdaCase, PatternSynonyms #-}
 module TTI where
 
-import Data.List (intersect, isPrefixOf)
+import Data.List (intersect, isPrefixOf, (\\))
 import Control.Applicative ((<**>))
-import Data.Function ((&))
-import Data.Functor ((<&>))
 
 --Basic types, type synonyms.
 
@@ -128,7 +126,7 @@ probabilityOther cardsInPlay other =
     (416 - fromIntegral (length cardsInPlay) )
 
 
-
+{-
 judgeInitial :: CardsInPlay -> Probability
 judgeInitial cards = maximum [ doubleCards , splitCards , surrender , ( hit cards ) , ( stand cards ) ]
   where
@@ -141,7 +139,11 @@ hit = undefined
 
 splitCards = undefined
 
-doubleCards = undefined
+doubleCards = undefined-}
+
+
+{- Anna Kournikova! It looks good, but it's absolutely broken. I'm getting 90 minute computations on a single
+version, with an 4900 EV, and 1.4 TB of RAM used. -}
 
 evaluateHitVsStand :: CardsInPlay -> Suggestion
 evaluateHitVsStand cardsInPlay =
@@ -192,84 +194,94 @@ section is mostly complete, except for the calculateStandEV calculations.-}
 
 
 
-
 calculateStandEV :: CardsInPlay -> ExpectedValue
 calculateStandEV cardsInPlay@( playerCards , dealerFaceUp ) 
 
-{- Basic formula for calculating stand EV is:
-  
-  probability of tie * 1 +
-  probability of loss * 0 +
-  probability of win * (win yield)
-  
-  This is equivalent to, given that:
+{- Refactoring, there's only three cases that matter. First,
+there's the case of 6 card charlie. Then the player wins provided
+that the dealer doesn't have a natural, and that the opponent doesn't
+have a 6 card charlie of their own.
 
-  probability of win = 1 - probability of tie - probability of loss
+Second, there's the case of a player natural. The player always wins
+unless the opponent has naturals, in which case there's a tie.
 
-  win yield - (probability of tie * win yield) - (probability of loss * winyield)
+Third, there's the case of player 21. Uniquely here, the player loses to a natural,
+and ties to a dealer 21.
 
-  Factoring it further, the total calculation comes out to:
+Fourth, there's any other case.
 
+There's also the basic calculation of wins, loss, and ties. In the case of loss,
+since we set EV to 1 on tie, we won't calculate anything. In the case of winning,
+we'll set the yield to 2, unless it's a natural, in which case the yield is 2.5.
 
+The general formula then comes out to:
 
-  win yield + (probability of tie * (1 - win yield)) - probability of loss * win yield
-  
-  -}
+1 * probability of tie + 2 * probability of winning
+probability of winning = 1 - probability of tie - probability of losing
+
+then:
+
+probability of tie + (2 * (1 - probability of tie - probability of losing)
+
+2 + (-2 * probability of tie) - 2 * probability of losing + probability of tie
+
+2 - 2 * probability of losing - probability of tie.
+
+For naturals:
+
+2.5 - 1.5 * probability of tie
+
+-}
+
+    | length playerCards == 6 =
+
+        2 - 2 * calcDealer cardsInPlay
+        
+        (
+
+        dealerHandsNatural <>
+        (filter (valueCheck playerHandValue (<)) dealerHandsSix)
+
+        )
+
+        - calcDealer cardsInPlay
+        (filter (valueCheck playerHandValue (==)) dealerHandsSix)
 
     | elem playerCards natural =
+    2.5 - 1.5 * calcDealer cardsInPlay dealerHandsNatural
+
+    | playerHandValue == 21 =
+
+        2 - 2 * calcDealer cardsInPlay
+        
+        (
+
+        dealerHandsSix <>
+        dealerHandsNatural
+
+        )
+
+        - calcDealer cardsInPlay
+        ( dealerHands21 \\ dealerHandsNatural )
+
+    | otherwise = 
+
+          2 - 2 * calcDealer cardsInPlay
       
-      2.5 - 1.5 * (calcDealer cardsInPlay dealerHandsNatural)
+          (
 
--- Note that naturals take precedence over 6 card charlie.
+          dealerHandsSix <>
+          filter (valueCheck playerHandValue (<)) dealerHandsNotSix
 
-    | length playerCards == 6, playerValue <- cardsToValue playerCards = error "executeSixCardCharlieLogic"
+          )
 
-{- tieCase * 1 + loseCase * 0 + (1-tieCase-loseCase) * 2 for the EV when the player gets 21 value
-without 6 card charlie, where x is the odds of tying at 21, y is the
-odds of losing to 6 card charlie or naturals. 
-
-Mathematically, this factors out to (2-2tieCase-2loseCase) +x, or 2-2loseCase-tiecase. -}
-
-    | cardsToValue playerCards == 21 =
-      
-      2 - 2 * calcDealer cardsInPlay dealerHandsSix -
-      calcDealer cardsInPlay (dealerHands21 <> dealerHandsNatural)
-
-{- Same as above, except x = dealerHands for 20, y now includes
-   dealerHands for 21-}
-
-    | cardsToValue playerCards == 20 =
-
-      2 - 2 *
-      (calcDealer cardsInPlay (dealerHandsSix <> dealerHands21)) -
-      calcDealer cardsInPlay dealerHands20
-
-{- Same pattern, I ought to just refactor the entire set away into one. -}
-
-    | cardsToValue playerCards == 19 =
-
-      2 - 2 *
-      calcDealer cardsInPlay (dealerHandsSix <>
-      dealerHands21 <> dealerHands20) -
-      calcDealer cardsInPlay dealerHands19
-
-    | cardsToValue playerCards == 18 =
-
-      2 - 2 *
-      calcDealer cardsInPlay (dealerHandsSix <> dealerHands21 <>
-       dealerHands20 <> dealerHands19) -
-      calcDealer cardsInPlay dealerHands18
-
-    | cardsToValue playerCards == 17 =
-
-      2 - 2 *
-      calcDealer cardsInPlay (dealerHandsSix <> dealerHands21 <>
-      dealerHands20 <> dealerHands19 <> dealerHands18) -
-      calcDealer cardsInPlay dealerHands17
-
-    | cardsToValue playerCards < 17 = error "executeBelow17Logic"
+          - calcDealer cardsInPlay
+          (filter (valueCheck playerHandValue (==)) dealerHandsNotSix)
 
 
+  where
+
+    playerHandValue = cardsToValue playerCards
 
 calcDealer :: CardsInPlay -> [DealerCards] -> Probability
 calcDealer ( playerCards , dealerFaceUp ) =
@@ -334,6 +346,10 @@ dealerHandsSix = filter ( (==6) . length ) dealerHands
 
 
 
+{- The subsequent functions generate the term "dealerHands", which contains all possible dealer hands. -}
+
+
+
 -- | Dealer hands. Iterate creates a list on which elements of the list are repetitions
 -- of the action x times, where x is the index of the list starting from 0.
 
@@ -363,6 +379,8 @@ appendNewCardDealer preExistingCards =
           --dealer to go bust.
 
     dealerStandCards <> dealerHitCards
+
+
     
 -- | Mostly avoids a direct call to cardsToValue, otherwise mostly identical to directly
 -- calling the Boolean. Note the invisible [Card] via eta reduction.
@@ -400,7 +418,7 @@ basicValueOfCards = foldr ( (+) . (+1) . fromEnum ) (0)
 
 -- | As mentioned above, checkForAces is in a mutually-recursive loop with cardsToValue,
 -- breaking out via a declaration of 22. It calls reduceAce to reduce aces one by one from
--- 11 to 1 in value.
+-- 11 to 1 in value. Using 22 to indicate bust is admittedly a bit inelegant.
 
 
 
@@ -414,7 +432,8 @@ checkForAces cards =
 
   
 -- | As before, note that reduceAce never actually creates a ReducedAce in a hand, only
--- for cardsToValue, checkForAces, etc, for calculation purposes.
+-- for cardsToValue, checkForAces, etc, for calculation purposes. Note that this only reduces
+-- one ace. Other such functions might reduce all aces.
 
 reduceAce :: [Card] -> [Card]
 reduceAce hand = case hand of
