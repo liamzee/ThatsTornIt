@@ -15,7 +15,7 @@ data Action =
     | Hit
     | Stand
 
-    deriving (Eq, Ord)
+    deriving (Eq, Ord, Show)
 
 data Card =
 
@@ -62,10 +62,70 @@ type Suggestion = (ExpectedValue, Action)
 allRanks :: [Card]
 allRanks = [ Two .. Ace ]
 
+
+
 -- | Hands that are "naturals"
 
 natural :: [[Card]]
 natural = [ [ Ace , Ten_Jack_Queen_King ] , [ Ten_Jack_Queen_King , Ace ] ]
+
+
+
+-- Some safe versions of list functions, written with nil as a default value
+
+
+safeTailThroughNil :: [a] -> [a]
+safeTailThroughNil = \case
+
+    [] -> []
+    x:xs -> xs
+
+
+
+safeInitThroughNil :: [a] -> [a]
+safeInitThroughNil = \case
+
+    [] -> []
+    [x] -> []
+    x:xs -> x : safeInitThroughNil xs
+
+
+
+safeLastThroughNil :: [a] -> [a]
+safeLastThroughNil = \case
+
+    [] -> []
+    [x] -> [x]
+    x:xs -> safeLastThroughNil xs
+
+
+
+  -- Used both in dealer and player sides, easier to move this out of a where block.
+
+
+
+
+
+numberOfCardsIn :: Card -> [Card] -> Double
+numberOfCardsIn specificCard =
+      
+    fromIntegral . length . intersect [specificCard]
+
+
+
+probabilityTenJackQueenKing :: [Card] -> Double
+probabilityTenJackQueenKing cardsInPlay =
+
+    ( 128 - numberOfCardsIn Ten_Jack_Queen_King cardsInPlay ) /
+    (416 - fromIntegral (length cardsInPlay) )
+
+
+
+probabilityOther :: [Card] -> Card -> Double
+probabilityOther cardsInPlay other =
+
+    ( 32 - numberOfCardsIn other cardsInPlay ) /
+    (416 - fromIntegral (length cardsInPlay) )
 
 
 
@@ -83,30 +143,55 @@ splitCards = undefined
 
 doubleCards = undefined
 
-evaluateCards :: CardsInPlay -> Suggestion
-evaluateCards cardsInPlay =
+evaluateHitVsStand :: CardsInPlay -> Suggestion
+evaluateHitVsStand cardsInPlay =
   
-    max (calculateHits cardsInPlay) (calculateStands cardsInPlay)
+    evaluateHits (calculateStands cardsInPlay) $
+    evaluateHitVsStand <$> appendNewCardPlayer cardsInPlay
 
-calculateHits :: CardsInPlay -> Suggestion
-calculateHits cardsInPlay = evaluateCards cardsInPlay
+
+
+evaluateHits :: Suggestion -> [Suggestion] -> Suggestion
+evaluateHits stand [] = stand
+evaluateHits stand hit = max stand (sum $ fst <$> hit, Hit)
+
+
 
 calculateStands :: CardsInPlay -> Suggestion
-calculateStands cardsInPlay = ( calculateStandEV cardsInPlay , Stand )
+calculateStands cardsInPlay = 
+  
+    ( probabilityOfPlayerDraw cardsInPlay *
+    calculateStandEV cardsInPlay ,
+     Stand )
+
+
 
 appendNewCardPlayer :: CardsInPlay -> [ CardsInPlay ]
-appendNewCardPlayer ( playerCards , dealerFaceUp ) =
+appendNewCardPlayer cardsInPlay@( playerCards , dealerFaceUp ) =
   
     fmap (flip (,) dealerFaceUp) . filter (valueCheck 21 (>=)) $
     (pure playerCards) <**> (flip (++) <$> pure <$> allRanks )
 
 
-returnAnnotatedMax :: [Suggestion] -> Suggestion
-returnAnnotatedMax = maximum
+
+probabilityOfPlayerDraw :: CardsInPlay -> Probability
+probabilityOfPlayerDraw cardsInPlay@(playerCards, dealerCards) =
   
+    let combinedCardsInPlay = safeInitThroughNil playerCards ++ dealerCards in
+    
+    case safeLastThroughNil playerCards of
+
+        [] -> 1
+        [Ten_Jack_Queen_King] -> probabilityTenJackQueenKing combinedCardsInPlay
+        [other] -> probabilityOther combinedCardsInPlay other
 
 
---Finally have the calculateStandEV calculations partially set up, wherein the
+
+{- Finally have the calculateStandEV calculations partially set up. This overall
+section is mostly complete, except for the calculateStandEV calculations.-}
+
+
+
 
 calculateStandEV :: CardsInPlay -> ExpectedValue
 calculateStandEV cardsInPlay@( playerCards , dealerFaceUp ) 
@@ -192,10 +277,6 @@ calcDealer ( playerCards , dealerFaceUp ) =
     sum . map (probabilityOfDealerHand playerCards . safeTailThroughNil ) .
     filter (isPrefixOf $ dealerFaceUp )
 
-  where safeTailThroughNil = \case
-
-          [] -> []
-          x:xs -> xs
 
 
 probabilityOfDealerHand :: [Card] -> DealerCards -> Probability
@@ -206,22 +287,6 @@ probabilityOfDealerHand cardsInPlay dealerCards = case dealerCards of
         probabilityOfDealerHand (Ten_Jack_Queen_King:cardsInPlay) xs
     otherCard:xs -> probabilityOther cardsInPlay otherCard *
         probabilityOfDealerHand (otherCard:cardsInPlay) xs
-        
-  where
-
-    numberOfCardsIn specificCard =
-      
-        fromIntegral . length . intersect [specificCard]
-
-    probabilityTenJackQueenKing cardsInPlay =
-
-      ( 128 - numberOfCardsIn Ten_Jack_Queen_King cardsInPlay ) /
-       (416 - fromIntegral (length cardsInPlay) )
-
-    probabilityOther cardsInPlay other =
-
-      ( 32 - numberOfCardsIn other cardsInPlay ) /
-       (416 - fromIntegral (length cardsInPlay) )
 
 
 
