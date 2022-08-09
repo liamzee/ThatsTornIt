@@ -1,9 +1,14 @@
 module Main where
 
-import TTI
 import DataDeclarations
 import Data.Time
+import TopLevelEvaluator
 
 main :: IO ()
-main = getCurrentTime >>= print >> (print $ evaluateInitial ([Two, Two], [Two])) >> getCurrentTime >>= print >> pure ()
+main = do
+    
+    getCurrentTime >>= print
+    (print $ evaluateInitial ([Ace, Ace], [Nine]))
+    getCurrentTime >>= print
+    pure ()
 

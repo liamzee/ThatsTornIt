@@ -2,6 +2,9 @@
 
 module DataDeclarations where
 
+import Data.Aeson
+import GHC.Generics
+
 --Basic types, type synonyms.
 
 data Action =
@@ -12,7 +15,7 @@ data Action =
     | Hit
     | Stand
 
-    deriving (Eq, Ord, Show)
+    deriving (Generic, Eq, Ord, Show)
 
 data Card =
 
@@ -28,7 +31,12 @@ data Card =
     | Ten_Jack_Queen_King
     | Ace
     
-    deriving (Eq, Enum, Show)
+    deriving (Generic, Eq, Enum, Show)
+
+instance FromJSON Action
+instance FromJSON Card
+instance ToJSON Action
+instance ToJSON Card
 
 -- Pattern synonym for Ten_Jack_Queen_King added for debugging purposes.
 
