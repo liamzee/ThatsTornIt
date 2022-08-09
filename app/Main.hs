@@ -2,7 +2,8 @@ module Main where
 
 import TTI
 import DataDeclarations
+import Data.Time
 
 main :: IO ()
-main = (print $ evaluateInitial ([Ace, Tens], [Tens])) >> getChar >> pure ()
+main = getCurrentTime >>= print >> (print $ evaluateInitial ([Two, Two], [Two])) >> getCurrentTime >>= print >> pure ()
 
