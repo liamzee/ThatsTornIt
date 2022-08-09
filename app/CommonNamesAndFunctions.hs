@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase, BangPatterns #-}
 
 module CommonNamesAndFunctions where
 
@@ -69,46 +69,30 @@ safeLastThroughNil = \case
 numberOfCardsIn :: Card -> [Card] -> Double
 numberOfCardsIn specificCard =
       
-    fromIntegral . length . intersect [specificCard]
-
-
+    fromIntegral . length . filter (==specificCard)
 
 probabilityTenJackQueenKing :: [Card] -> Double
-probabilityTenJackQueenKing cardsInPlay =
-
+probabilityTenJackQueenKing !cardsInPlay =
     ( 128 - numberOfCardsIn Ten_Jack_Queen_King cardsInPlay ) /
     (416 - fromIntegral (length cardsInPlay) )
 
-
-
 probabilityOther :: [Card] -> Card -> Double
-probabilityOther cardsInPlay other =
-
+probabilityOther !cardsInPlay !other =
     ( 32 - numberOfCardsIn other cardsInPlay ) /
     (416 - fromIntegral (length cardsInPlay) )
-
-
 
 --AppendNewCardPlayer has been moved out from hit vs stand decision section, since it's going to be
 --reused by the double and split functions.
 
-
-
 appendNewCardPlayer :: CardsInPlay -> [ CardsInPlay ]
 appendNewCardPlayer cardsInPlay@( playerCards , dealerFaceUp ) =
-  
     fmap (flip (,) dealerFaceUp) . filter (valueCheck 21 (>=)) $
     (pure playerCards) <**> (flip (++) <$> pure <$> allRanks )
 
-
-
 probabilityOfPlayerDraw :: CardsInPlay -> Probability
 probabilityOfPlayerDraw cardsInPlay@(playerCards, dealerCards) =
-  
     let combinedCardsInPlay = safeInitThroughNil playerCards ++ dealerCards in
-    
     case safeLastThroughNil playerCards of
-
         [] -> 1
         [Ten_Jack_Queen_King] -> probabilityTenJackQueenKing combinedCardsInPlay
         [otherCard] -> probabilityOther combinedCardsInPlay otherCard

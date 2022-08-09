@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE PatternSynonyms, DeriveGeneric #-}
 
 module DataDeclarations where
 
@@ -31,7 +31,7 @@ data Card =
     | Ten_Jack_Queen_King
     | Ace
     
-    deriving (Generic, Eq, Enum, Show)
+    deriving (Generic, Eq, Enum, Show, Ord)
 
 instance FromJSON Action
 instance FromJSON Card
@@ -58,3 +58,41 @@ type Probability = Double
 type ExpectedValue = Double
 
 type Suggestion = (ExpectedValue, Action)
+
+
+-- JSON types
+
+
+newtype BlackjackSuggestions =
+
+    BlackjackSuggestions
+    {
+    topLevels :: [(Seed, GameTreeContents)]
+    }
+
+    deriving (Generic, Show)
+
+newtype GameTreeContents =
+
+    GameTreeContents
+    {
+    gameTreeContents :: [Suggestion]
+    }
+
+    deriving (Generic, Show)
+
+newtype Seed =
+
+    Seed
+    {
+    seed :: CardsInPlay
+    }
+
+    deriving (Generic, Show, Eq, Ord)
+
+instance FromJSON BlackjackSuggestions
+instance ToJSON BlackjackSuggestions
+instance FromJSON GameTreeContents
+instance ToJSON GameTreeContents
+instance FromJSON Seed
+instance ToJSON Seed

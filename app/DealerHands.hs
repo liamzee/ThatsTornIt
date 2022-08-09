@@ -1,3 +1,5 @@
+
+
 module DealerHands where
 
 import DataDeclarations
@@ -72,9 +74,9 @@ appendNewCardDealer preExistingCards =
     let dealerStandCards = filter ( valueCheck 17 (<=) ) preExistingCards
         dealerHitCards =
           
-          filter ( valueCheck 21 (>=) ) $
-          ( filter ( valueCheck 17 (>) ) preExistingCards ) <**>
-          (flip (++) <$> pure <$> allRanks) in
+            filter ( valueCheck 21 (>=) ) $
+            ( filter ( valueCheck 17 (>) ) preExistingCards ) <**>
+            (flip (++) <$> pure <$> allRanks) in
 
           --Last value filters preExistingCards based on player hitting,
           --starting at the end. The ((:) <$> deck) <*> adds cards, then
