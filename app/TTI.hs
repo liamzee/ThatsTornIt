@@ -1,4 +1,4 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase, PatternSynonyms #-}
 module TTI where
 
 import DataDeclarations
@@ -7,8 +7,9 @@ import DataDeclarations
       Probability,
       DealerCards,
       CardsInPlay,
-      Card(ReducedAce, Two, Ten_Jack_Queen_King, Ace),
-      Action(Stand, Surrender, DoubleAction, Hit, Split) )
+      Card(..),
+      Action(Stand, Surrender, DoubleAction, Split, Hit),
+      pattern Tens )
 
 import CommonNamesAndFunctions
     ( allRanks,
@@ -39,7 +40,6 @@ import Control.Applicative ((<**>))
 
 
 
-
 evaluateInitial :: CardsInPlay -> Suggestion
 evaluateInitial cardsInPlay = case cardsInPlay of
       
@@ -54,7 +54,7 @@ evaluateInitial cardsInPlay = case cardsInPlay of
 optionsWithSplit :: CardsInPlay -> [Suggestion]
 optionsWithSplit cardsInPlay =
   
-  [ doubleCards cardsInPlay , undefined ,
+  [ doubleCards cardsInPlay , splitCards cardsInPlay ,
   surrender , evaluateHitVsStand cardsInPlay ]
 
 
@@ -88,14 +88,15 @@ doubleCards cardsInPlay =
 
 
 
-splitCards :: CardsInPlay -> [Suggestion]
+splitCards :: CardsInPlay -> Suggestion
 splitCards (playerCards , dealerFaceUp) = 
     
-    maximum $ splitAppender <$> appendNewCardPlayer (safeInitThroughNil 
+    maximum $ splitAppender =<< appendNewCardPlayer (safeInitThroughNil 
     playerCards , dealerFaceUp)
 
   where
 
+    splitAppender :: CardsInPlay -> [Suggestion]
     splitAppender cardsInPlay =
       
         (\(ev,action) -> ((probabilityOfPlayerDraw cardsInPlay) * ev , Split)) <$>
