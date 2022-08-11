@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedLists #-}
+
 module Main where
 
 import DataDeclarations

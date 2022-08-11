@@ -1,4 +1,5 @@
-{-# LANGUAGE OverloadedStrings , ApplicativeDo #-}
+{-# LANGUAGE OverloadedStrings , OverloadedLists , ApplicativeDo #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Outputter where
 
@@ -8,10 +9,10 @@ import DataDeclarations
       CardsInPlay,
       Seed(Seed),
       GameTreeContents(GameTreeContents),
-      BlackjackSuggestions(BlackjackSuggestions), Card )
+      BlackjackSuggestions(BlackjackSuggestions), Card (Two, Ace), DealerCards )
 import GHC.Generics ( Generic )
 import Data.Aeson ( encode, FromJSON, ToJSON )
-import Graphics.UI.TinyFileDialogs ( saveFileDialog, OK (OK), messageBox, IconType(Error) )
+--import Graphics.UI.TinyFileDialogs ( saveFileDialog, OK (OK), messageBox, IconType(Error) )
 import Data.Text (empty, unpack, Text)
 import Data.Maybe (fromMaybe)
 import Data.ByteString.Lazy ( writeFile )
@@ -19,13 +20,17 @@ import Prelude hiding (writeFile)
 import CommonNamesAndFunctions ( allRanks, appendNewCardPlayer )
 import HitStandEvaluator (evaluateHitVsStand)
 import Data.Foldable (foldl')
-import Data.List (sort)
 import CardValueChecker (valueCheck)
 import Control.Applicative ((<**>))
+import Data.Functor ((<&>))
+import Data.List (sort, filter)
+import Data.Set
+import qualified Data.Set as Set
+import Data.Vector
 
 
 
-filePathMaker :: IO Data.Text.Text
+{-filePathMaker :: IO Data.Text.Text
 filePathMaker =
     
    fromMaybe Data.Text.empty <$> saveFileDialog
@@ -43,86 +48,34 @@ outputMain = do
              Error OK 
              >> error "no file provided"
         else writeFile filePath $ encode blackjackSuggestions
+-}
 
+--blackjackSuggestions :: BlackjackSuggestions
+--blackjackSuggestions = BlackjackSuggestions $ makeGameTree <$> makeSeed
+{-
+allRanksVector :: Vector Card
+allRanksVector = [ Two .. Ace ]
 
-
-blackjackSuggestions :: BlackjackSuggestions
-blackjackSuggestions = BlackjackSuggestions $ makeGameTree <$> makeSeed
-
-removeSeqDuplicate :: Eq a => [a] -> [a]
-removeSeqDuplicate [] = []
-removeSeqDuplicate [b] = [b]
-removeSeqDuplicate (a:b:xs) | a == b = removeSeqDuplicate (a:xs)
-    | otherwise = a: removeSeqDuplicate (b:xs)
-
-injectASort :: Seed -> Seed
-injectASort (Seed (left, right)) = Seed (sort left, right)
-
-makeSeed :: [Seed]
-makeSeed = removeSeqDuplicate . sort $ injectASort . Seed <$> do
-    leftSideOne <- allRanks
-    leftSideTwo <- allRanks
-    rightSideOne <- allRanks
-    pure (([leftSideOne,leftSideTwo]), [rightSideOne])
-
-
-
-makeGameTree :: Seed -> (Seed, GameTreeContents)
-makeGameTree (Seed seed) = (Seed seed , GameTreeContents (go1 seed) )
+seed :: Set ( Vector Card, DealerCards)
+seed = Data.Set.fromList . Data.Vector.toList $ do
+    dealerCard <- allRanksVector
+    leftCard <- allRanksVector
+    rightCard <- allRanksVector
+    pure ((sort [leftCard,rightCard]),[dealerCard])
     
-  where
-
-
-
-    go1 :: CardsInPlay -> [Suggestion]
-    go1 cardsInPlay = (evaluateInitial cardsInPlay : go2 cardsInPlay)
-
-
-
-    go2 :: CardsInPlay -> [Suggestion]
-    go2 cardsInPlay
-
-        | null seedForNew = []
-        | otherwise = foldl' (flip (:)) recursionField ( evaluateHitVsStand <$> seedForNew )
-
-      where
+makeGameTree :: Seed -> Set (CardsInPlay)
+makeGameTree inputSeed = 
     
-        seedForNew = appendNewCardPlayer cardsInPlay
-        recursionField = concat $ go2 <$> seedForNew
+    seed <>
+    appendNewElement seed <>
+    appendNewElement (appendNewElement seed) <>
+    appendNewElement (appendNewElement (appendNewElement seed)) <>
+    appendNewElement (appendNewElement (appendNewElement (appendNewElement seed)))
 
+appendNewElement :: Set (CardsInPlay) -> Set (CardsInPlay)
+appendNewElement target = unions $ flip Set.map target $ Data.Set.fromList . (\(leftElem,rightElem) -> do
 
+        newCard <- allRanks
+        [(sort (newCard:leftElem),rightElem)])
 
-
-
-
-
-makeSeed2 :: [Seed]
-makeSeed2 = Seed <$> do
-    leftSideOne <- allRanks
-    leftSideTwo <- allRanks
-    rightSideOne <- allRanks
-    pure (([leftSideOne,leftSideTwo]), [rightSideOne])
-
-test :: [[Card]]
-test = removeSeqDuplicate . sort . fmap sort $ appendNewCard . appendNewCard . appendNewCard . appendNewCard $ ( map fst . removeSeqDuplicate . sort . fmap internalsort $ makeSeed2)
-
-internalsort :: Seed -> ([Card],[Card])
-internalsort (Seed (leftList, rightList)) = (sort leftList, rightList)
-
-
-appendNewCard :: [[Card]] -> [[Card]]
-appendNewCard preExistingCards =
-
-    let 
-        outputCards =
-          
-            filter ( valueCheck 21 (>=) ) $
-            ( preExistingCards ) <**>
-            (flip (++) <$> pure <$> allRanks) in
-
-          --Last value filters preExistingCards based on player hitting,
-          --starting at the end. The ((:) <$> deck) <*> adds cards, then
-          --the filter before it removes combinations that would cause the
-          --dealer to go bust.
-
-    preExistingCards <> outputCards
+        -}

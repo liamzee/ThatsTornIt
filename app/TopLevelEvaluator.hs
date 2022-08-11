@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedLists #-}
+
 module TopLevelEvaluator where
 
 
@@ -9,6 +11,8 @@ import DataDeclarations
 import HitStandEvaluator (evaluateHitVsStand)
 import CommonNamesAndFunctions (appendNewCardPlayer, probabilityOfPlayerDraw, safeInitThroughNil)
 import StandEVEvaluator ( calculateStandEV )
+import Data.Sequence
+import qualified Data.Sequence as Seq
 
 
 -- Evaluation functions that provide support for the top-level, wherein more than the usual
@@ -27,18 +31,18 @@ evaluateInitial cardsInPlay = case cardsInPlay of
 
 
 
-optionsWithSplit :: CardsInPlay -> [Suggestion]
+optionsWithSplit :: CardsInPlay -> Seq Suggestion
 optionsWithSplit cardsInPlay =
   
-  [ doubleCards cardsInPlay , splitCards cardsInPlay ,
-  surrender , evaluateHitVsStand cardsInPlay ]
+   doubleCards cardsInPlay :<| splitCards cardsInPlay :<|
+  surrender :<| evaluateHitVsStand cardsInPlay :<| Empty
 
 
 
-optionsWithoutSplit :: CardsInPlay -> [Suggestion]
+optionsWithoutSplit :: CardsInPlay -> Seq Suggestion
 optionsWithoutSplit cardsInPlay =
   
-    [ doubleCards cardsInPlay , surrender , evaluateHitVsStand cardsInPlay]
+    [doubleCards cardsInPlay , surrender , evaluateHitVsStand cardsInPlay]
 
 
 

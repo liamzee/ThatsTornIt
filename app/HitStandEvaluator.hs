@@ -4,6 +4,7 @@ import DataDeclarations
 import CommonNamesAndFunctions
     ( appendNewCardPlayer, probabilityOfPlayerDraw )
 import StandEVEvaluator (calculateStandEV)
+import Data.Sequence
 
 
 {- Terrible performance here, with 8 minute evaluate times on O2.
@@ -31,8 +32,8 @@ evaluateHitVsStand cardsInPlay =
 
 
 infixl 0 `evaluateHits`
-evaluateHits :: Suggestion -> [Suggestion] -> Suggestion
-evaluateHits stand [] = stand
+evaluateHits :: Suggestion -> Seq Suggestion -> Suggestion
+evaluateHits stand Empty = stand
 evaluateHits stand hit = max stand (sum $ fst <$> hit, Hit)
 
 

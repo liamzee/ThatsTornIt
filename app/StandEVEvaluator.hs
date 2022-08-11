@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 
 module StandEVEvaluator where
 
@@ -6,19 +7,20 @@ import DataDeclarations
       Probability,
       DealerCards,
       CardsInPlay,
-      Card(Ten_Jack_Queen_King) )
+      Card(Ten_Jack_Queen_King, Ace) )
 import CommonNamesAndFunctions
     ( natural,
       safeTailThroughNil,
-      probabilityTenJackQueenKing,
-      probabilityOther )
+      probabilityTenJackQueenKing, numberOfCardsIn, seqIsPrefixOf)
 import DealerHands
     ( dealerHandsNotSix,
       dealerHands21,
       dealerHandsNatural,
-      dealerHandsSix )
+      dealerHandsSix)
 import CardValueChecker ( cardsToValue, valueCheck )
 import Data.List ((\\), isPrefixOf)
+import Data.Sequence
+import qualified Data.Sequence as Seq
 
 
 {- The following functions calculate the stand EV, which is fundamental for
@@ -28,10 +30,6 @@ Ultimately, all actions eventually recourse to what the stand EV is, because if
   you no longer have valid moves, you must stand.-}
 
 
-
-calculateStandEV :: CardsInPlay -> ExpectedValue
-calculateStandEV cardsInPlay@( playerCards , dealerFaceUp ) 
-  
 {- Refactoring, there's only three cases that matter. First,
   there's the case of 6 card charlie. Then the player wins provided
   that the dealer doesn't have a natural, and that the opponent doesn't
@@ -67,96 +65,49 @@ calculateStandEV cardsInPlay@( playerCards , dealerFaceUp )
   2.5 - 1.5 * probability of tie
   
   -}
-  
-    | length playerCards == 6 = playerSixCardCharlieCalc
-  
-    | elem playerCards natural =
-        
-        2.5 - 1.5 * calcDealer cardsInPlay dealerHandsNatural
-  
-    | playerHandValue == 21 = playerNonNatural21Calc
-  
-    | otherwise = playerNormalCalc
-  
-  where
-  
-  
-  
-    playerHandValue :: Int
-    playerHandValue = cardsToValue playerCards
-  
-  
-      
-    playerSixCardCharlieCalc :: ExpectedValue
-    playerSixCardCharlieCalc = 
-        
-        2
-        - 2 * lossConditionEV
-        -  tieConditionEV
 
-        where lossConditionEV =
-          
-                  calcDealer cardsInPlay dealerHandsNatural
-                  + calcDealer cardsInPlay 
-                  (filter (valueCheck playerHandValue (<)) dealerHandsSix)
-
-              tieConditionEV =
-
-                  calcDealer cardsInPlay $
-                  filter (valueCheck playerHandValue (==)) dealerHandsSix
-  
-  
-  
-    playerNonNatural21Calc :: ExpectedValue
-    playerNonNatural21Calc =
-  
-        2
-        - 2 * lossConditionEV
-        - tieConditionEV
-
-      where
-
-        lossConditionEV = 
-          
-          calcDealer cardsInPlay dealerHandsSix
-          + calcDealer cardsInPlay dealerHandsNatural
-
-        tieConditionEV =
-
-          calcDealer cardsInPlay dealerHands21
-          - calcDealer cardsInPlay dealerHandsNatural
-  
-  
-  
-    playerNormalCalc :: ExpectedValue
-    playerNormalCalc =
-  
-        2 - 2 * lossConditionEV
-        - tieConditionEV
-        
-
-      where
-
-        lossConditionEV = 
-
-            calcDealer cardsInPlay dealerHandsSix +
-            calcDealer cardsInPlay
-            (filter (valueCheck playerHandValue (<)) dealerHandsNotSix)
-
-        tieConditionEV =
-          
-          calcDealer cardsInPlay $
-          filter (valueCheck playerHandValue (==)) dealerHandsNotSix
-  
-  
-  
-calcDealer :: CardsInPlay -> [DealerCards] -> Probability
-calcDealer ( playerCards , dealerFaceUp ) =
+calculateStandEV :: CardsInPlay -> ExpectedValue
+calculateStandEV !cardsInPlay@(playerCards, [dealerFaceUp]) = 
     
-    sum . map (probabilityOfDealerHand playerCards . safeTailThroughNil ) .
-    filter (isPrefixOf $ dealerFaceUp )
+    let
+    naturalEV = 2.5 - 1.5 * calcDealer cardsInPlay dealerHandsNatural
+    winMinusLossMinusTie lossHands tieHands = 2 - 2 * calcDealer cardsInPlay lossHands
+        - calcDealer cardsInPlay tieHands in
+
+    case playerCards of
+        [Ace,Ten_Jack_Queen_King] -> naturalEV
+        [Ten_Jack_Queen_King,Ace] -> naturalEV
+        playerCards | Prelude.length playerCards == 6 ->  winMinusLossMinusTie
+            (
+                dealerHandsNatural <>
+                Seq.filter (valueCheck (cardsToValue playerCards) (<)) dealerHandsSix
+            )
+            (
+                Seq.filter (valueCheck (cardsToValue playerCards) (==)) dealerHandsSix
+            )
+        playerCards  | cardsToValue playerCards == 21 -> winMinusLossMinusTie
+            (
+                dealerHandsSix <>
+                dealerHandsNatural
+            )
+            (
+                dealerHands21 
+            ) + calcDealer cardsInPlay dealerHandsNatural
+        playerCards -> winMinusLossMinusTie
+            (
+                dealerHandsSix <>
+                Seq.filter (valueCheck (cardsToValue playerCards) (<)) dealerHandsNotSix
+            )
+            (
+                Seq.filter (valueCheck (cardsToValue playerCards) (==)) dealerHandsNotSix
+            )
+
   
-  
+calcDealer :: CardsInPlay -> Seq DealerCards -> Probability
+calcDealer ( playerCards , [dealerFaceUp] ) =
+    
+    (sum $!). fmap (probabilityOfDealerHand playerCards . safeTailThroughNil ) .
+    Seq.filter (isPrefixOf [dealerFaceUp] )
   
 probabilityOfDealerHand :: [Card] -> DealerCards -> Probability
 probabilityOfDealerHand cardsInPlay dealerCards = case dealerCards of
@@ -164,5 +115,7 @@ probabilityOfDealerHand cardsInPlay dealerCards = case dealerCards of
     [] -> 1
     Ten_Jack_Queen_King:xs -> probabilityTenJackQueenKing cardsInPlay *
         probabilityOfDealerHand (Ten_Jack_Queen_King:cardsInPlay) xs
-    otherCard:xs -> probabilityOther cardsInPlay otherCard *
+    otherCard:xs -> (( 32 - (fromIntegral . Prelude.length . Prelude.filter (==otherCard) $ cardsInPlay) ) /
+        (416 - fromIntegral (Prelude.length cardsInPlay) )) *
         probabilityOfDealerHand (otherCard:cardsInPlay) xs
+

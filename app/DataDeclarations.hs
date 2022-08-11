@@ -4,6 +4,7 @@ module DataDeclarations where
 
 import Data.Aeson
 import GHC.Generics
+import Data.Sequence
 
 --Basic types, type synonyms.
 
@@ -19,8 +20,7 @@ data Action =
 
 data Card =
 
-      ReducedAce
-    | Two
+      Two
     | Three
     | Four
     | Five
@@ -45,13 +45,9 @@ pattern Tens = Ten_Jack_Queen_King
 
 type CardsInPlay = ( PlayerCards , DealerCards )
 
-type PlayerCards = [ Card ]
+type PlayerCards = [Card]
 
-type DealerCards = [ Card ]
-
-type CardsRevealed = [ Card ]
-
-type Players = [ Card ]
+type DealerCards = [Card]
 
 type Probability = Double
 
