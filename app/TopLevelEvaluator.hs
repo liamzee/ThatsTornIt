@@ -22,55 +22,53 @@ import qualified Data.Sequence as Seq
 
 evaluateInitial :: CardsInPlay -> Suggestion
 evaluateInitial cardsInPlay = case cardsInPlay of
-      
-        ( [firstCard , secondCard], _ ) | firstCard == secondCard ->
-            
-            maximum $ optionsWithSplit cardsInPlay
-
-        _ -> maximum $ optionsWithoutSplit cardsInPlay
-
-
+    ( [firstCard , secondCard], _ ) | firstCard == secondCard ->
+        maximum $ optionsWithSplit cardsInPlay
+    _ -> maximum $ optionsWithoutSplit cardsInPlay
 
 optionsWithSplit :: CardsInPlay -> Seq Suggestion
 optionsWithSplit cardsInPlay =
-  
-   doubleCards cardsInPlay :<| splitCards cardsInPlay :<|
-  surrender :<| evaluateHitVsStand cardsInPlay :<| Empty
-
-
+    [
+        doubleCards cardsInPlay ,
+        splitCards cardsInPlay ,
+        surrender ,
+        evaluateHitVsStand cardsInPlay 
+    ]
 
 optionsWithoutSplit :: CardsInPlay -> Seq Suggestion
 optionsWithoutSplit cardsInPlay =
-  
-    [doubleCards cardsInPlay , surrender , evaluateHitVsStand cardsInPlay]
-
-
+    [
+        doubleCards cardsInPlay ,
+        surrender ,
+        evaluateHitVsStand cardsInPlay
+    ]
 
 optionsWithoutSplitOrSurrender :: CardsInPlay -> [Suggestion]
 optionsWithoutSplitOrSurrender cardsInPlay =
-
-    [ doubleCards cardsInPlay , evaluateHitVsStand cardsInPlay]
-
-
+    [
+        doubleCards cardsInPlay ,
+        evaluateHitVsStand cardsInPlay
+    ]
 
 surrender :: Suggestion
 surrender = ( 0.50 , Surrender )
 
-
-
 doubleCards :: CardsInPlay -> Suggestion
 doubleCards cardsInPlay = 
-      
-    ( (subtract 1) . (*2) . sum $
-    deriveCorrectProbabilityForDouble <$>
-    appendNewCardPlayer cardsInPlay
-    , DoubleAction )
+    (
+        subtract 1 .
+        (*2) .
+        sum $
+        deriveCorrectProbabilityForDouble <$>
+        appendNewCardPlayer cardsInPlay
+    ,
+        DoubleAction
+    )
 
   where
 
     deriveCorrectProbabilityForDouble :: CardsInPlay -> Probability
     deriveCorrectProbabilityForDouble newCardsInPlay =
-
         probabilityOfPlayerDraw newCardsInPlay *
         calculateStandEV newCardsInPlay
 
@@ -79,15 +77,32 @@ doubleCards cardsInPlay =
 splitCards :: CardsInPlay -> Suggestion
 splitCards (playerCards , dealerFaceUp) = 
     
-    ( (subtract 1).(*2).sum $ splitProcessor <$>
-    appendNewCardPlayer
-    (safeInitThroughNil playerCards , dealerFaceUp)
-    , Split )
+    ( 
+        subtract 1 .
+        (*2) .
+        sum $
+        splitProcessor <$>
+        appendNewCardPlayer
+        (
+            safeInitThroughNil playerCards
+            ,
+            dealerFaceUp
+        )
+        ,
+        Split
+    )
 
   where
 
     splitProcessor :: CardsInPlay -> Probability
     splitProcessor cardsInPlay =
       
-        (\(ev,_) -> (probabilityOfPlayerDraw cardsInPlay * ev ) ) $
-         maximum (optionsWithoutSplitOrSurrender cardsInPlay)
+        (
+            \(ev,_) ->
+                (
+                    probabilityOfPlayerDraw cardsInPlay *
+                    ev 
+                )
+        ) $
+        maximum $
+        optionsWithoutSplitOrSurrender cardsInPlay

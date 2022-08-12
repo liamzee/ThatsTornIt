@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns, ViewPatterns #-}
 
 module StandEVEvaluator where
 
@@ -11,7 +11,7 @@ import DataDeclarations
 import CommonNamesAndFunctions
     ( natural,
       safeTailThroughNil,
-      probabilityTenJackQueenKing, numberOfCardsIn, seqIsPrefixOf)
+      probabilityTenJackQueenKing, numberOfCardsIn, seqIsPrefixOf, probabilityOther)
 import DealerHands
     ( dealerHandsNotSix,
       dealerHands21,
@@ -21,6 +21,7 @@ import CardValueChecker ( cardsToValue, valueCheck )
 import Data.List ((\\), isPrefixOf)
 import Data.Sequence
 import qualified Data.Sequence as Seq
+import Data.Foldable (toList)
 
 
 {- The following functions calculate the stand EV, which is fundamental for
@@ -71,7 +72,7 @@ calculateStandEV !cardsInPlay@(playerCards, [dealerFaceUp]) =
     
     let
     naturalEV = 2.5 - 1.5 * calcDealer cardsInPlay dealerHandsNatural
-    winMinusLossMinusTie lossHands tieHands = 2 - 2 * calcDealer cardsInPlay lossHands
+    winMinusLossMinusTie lossHands tieHands = 2 - (2 * calcDealer cardsInPlay lossHands)
         - calcDealer cardsInPlay tieHands in
 
     case playerCards of
@@ -92,7 +93,9 @@ calculateStandEV !cardsInPlay@(playerCards, [dealerFaceUp]) =
             )
             (
                 dealerHands21 
-            ) + calcDealer cardsInPlay dealerHandsNatural
+            ) 
+            +
+            calcDealer cardsInPlay dealerHandsNatural
         playerCards -> winMinusLossMinusTie
             (
                 dealerHandsSix <>
@@ -102,20 +105,23 @@ calculateStandEV !cardsInPlay@(playerCards, [dealerFaceUp]) =
                 Seq.filter (valueCheck (cardsToValue playerCards) (==)) dealerHandsNotSix
             )
 
+-- |
   
 calcDealer :: CardsInPlay -> Seq DealerCards -> Probability
 calcDealer ( playerCards , [dealerFaceUp] ) =
     
-    (sum $!). fmap (probabilityOfDealerHand playerCards . safeTailThroughNil ) .
+    (sum $!) .
+    fmap (probabilityOfDealerHand playerCards . safeTailThroughNil ) .
     Seq.filter (isPrefixOf [dealerFaceUp] )
+
+-- |
   
 probabilityOfDealerHand :: [Card] -> DealerCards -> Probability
-probabilityOfDealerHand cardsInPlay dealerCards = case dealerCards of
-      
-    [] -> 1
-    Ten_Jack_Queen_King:xs -> probabilityTenJackQueenKing cardsInPlay *
-        probabilityOfDealerHand (Ten_Jack_Queen_King:cardsInPlay) xs
-    otherCard:xs -> (( 32 - (fromIntegral . Prelude.length . Prelude.filter (==otherCard) $ cardsInPlay) ) /
-        (416 - fromIntegral (Prelude.length cardsInPlay) )) *
-        probabilityOfDealerHand (otherCard:cardsInPlay) xs
+probabilityOfDealerHand cardsInPlay [] = 1
+probabilityOfDealerHand cardsInPlay (Ten_Jack_Queen_King:xs) = 
+    probabilityTenJackQueenKing cardsInPlay *
+    probabilityOfDealerHand (Ten_Jack_Queen_King:cardsInPlay) xs
+probabilityOfDealerHand cardsInPlay (otherCard:xs) =  
+    probabilityOther cardsInPlay otherCard *
+    probabilityOfDealerHand (otherCard:cardsInPlay) xs
 

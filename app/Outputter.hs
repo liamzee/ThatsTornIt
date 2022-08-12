@@ -3,79 +3,93 @@
 
 module Outputter where
 
-import TopLevelEvaluator ( evaluateInitial )
+import TopLevelEvaluator ( evaluateInitial, optionsWithoutSplit )
 import DataDeclarations
     ( Suggestion,
       CardsInPlay,
       Seed(Seed),
       GameTreeContents(GameTreeContents),
-      BlackjackSuggestions(BlackjackSuggestions), Card (Two, Ace), DealerCards )
-import GHC.Generics ( Generic )
+      BlackjackSuggestions(BlackjackSuggestions), Card (Two, Ace), DealerCards, PlayerCards, JSONLabels (..) )
 import Data.Aeson ( encode, FromJSON, ToJSON )
---import Graphics.UI.TinyFileDialogs ( saveFileDialog, OK (OK), messageBox, IconType(Error) )
+import Graphics.UI.TinyFileDialogs ( saveFileDialog, OK (OK), messageBox, IconType(Error) )
 import Data.Text (empty, unpack, Text)
 import Data.Maybe (fromMaybe)
 import Data.ByteString.Lazy ( writeFile )
-import Prelude hiding (writeFile)
+import Prelude hiding ((++), writeFile)
 import CommonNamesAndFunctions ( allRanks, appendNewCardPlayer )
 import HitStandEvaluator (evaluateHitVsStand)
-import Data.Foldable (foldl')
 import CardValueChecker (valueCheck)
-import Control.Applicative ((<**>))
-import Data.Functor ((<&>))
-import Data.List (sort, filter)
-import Data.Set
+import Data.List (sort)
+import Data.Set ( Set, fromList, toList, unions )
 import qualified Data.Set as Set
-import Data.Vector
 
+--IO Code
 
-
-{-filePathMaker :: IO Data.Text.Text
+filePathMaker :: IO Data.Text.Text
 filePathMaker =
-    
    fromMaybe Data.Text.empty <$> saveFileDialog
-   "That's Torn It File Target Dialog" "" [".json"] "JSONs"
-
-
+   "That's Torn It File Target Dialog" "json" ["json"] "json"
 
 outputMain :: IO ()
 outputMain = do
-    
     filePath <- Data.Text.unpack <$> filePathMaker
-    if null filePath
+    if Prelude.null filePath
         then messageBox "That's Torn It"
              "No file provided. Exiting with error."
-             Error OK 
-             >> error "no file provided"
+             Error OK >>
+             error "no file provided"
         else writeFile filePath $ encode blackjackSuggestions
--}
 
---blackjackSuggestions :: BlackjackSuggestions
---blackjackSuggestions = BlackjackSuggestions $ makeGameTree <$> makeSeed
-{-
-allRanksVector :: Vector Card
-allRanksVector = [ Two .. Ace ]
+blackjackSuggestions :: BlackjackSuggestions
+blackjackSuggestions = BlackjackSuggestions $ seedToBlackjackContents <$> cardinalStates
 
-seed :: Set ( Vector Card, DealerCards)
-seed = Data.Set.fromList . Data.Vector.toList $ do
-    dealerCard <- allRanksVector
-    leftCard <- allRanksVector
-    rightCard <- allRanksVector
-    pure ((sort [leftCard,rightCard]),[dealerCard])
+seedToBlackjackContents :: Seed -> (Seed, GameTreeContents)
+seedToBlackjackContents (Seed cardsInPlay) =
+    (Seed cardsInPlay , GameTreeContents (transformToTuple <$> (findSameInitial (cardsInPlay))))
+
+findSameInitial :: CardsInPlay -> [(PlayerCards, DealerCards)]
+findSameInitial ([a,b],k) =
+    toList $ Set.filter (\case; (c:_,e) -> c == a && e == k; _ ->  False) gameStates
+
+transformToTuple :: CardsInPlay -> [(JSONLabels,CardsInPlay, Suggestion)]
+transformToTuple input@([a,b],_) | a == b = [(FirstRoundWithSplit, input , evaluateInitial input ),(FirstRoundWithoutSplit ,input , maximum $ optionsWithoutSplit input),(NormalPlay, input , evaluateHitVsStand input)]
+transformToTuple input@([_,_],_) = [(FirstRoundWithoutSplit, input , evaluateInitial input),(NormalPlay, input, evaluateHitVsStand input)]
+transformToTuple input = [(NormalPlay, input, evaluateHitVsStand input)]
+
+-- Functions used to generate all game states / possible cards in play.
+
+cardinalStates :: [Seed]
+cardinalStates = toList . Set.map Seed $ Set.filter filterForDoubles gameStates
+
+gameStates :: Set CardsInPlay
+gameStates = makeGameTree gameTreeSeed
+
+filterForDoubles :: Eq a => ([a], b) -> Bool
+filterForDoubles (([x,y]),_) | x == y = True
+filterForDoubles _ = False
+
+gameTreeSeed :: Set ( [Card], [Card])
+gameTreeSeed = fromList $ do
+    dealerCard <- allRanks
+    leftCard <- allRanks
+    rightCard <- allRanks
+    pure (sort [leftCard,rightCard],[dealerCard])
     
-makeGameTree :: Seed -> Set (CardsInPlay)
+makeGameTree :: Set (CardsInPlay) -> Set (CardsInPlay)
 makeGameTree inputSeed = 
-    
-    seed <>
-    appendNewElement seed <>
-    appendNewElement (appendNewElement seed) <>
-    appendNewElement (appendNewElement (appendNewElement seed)) <>
-    appendNewElement (appendNewElement (appendNewElement (appendNewElement seed)))
+    gameTreeSeed <>
+    appendNewElement gameTreeSeed <>
+    appendNewElement (appendNewElement gameTreeSeed) <>
+    appendNewElement (appendNewElement (appendNewElement gameTreeSeed)) <>
+    appendNewElement (appendNewElement (appendNewElement (appendNewElement gameTreeSeed)))
 
 appendNewElement :: Set (CardsInPlay) -> Set (CardsInPlay)
-appendNewElement target = unions $ flip Set.map target $ Data.Set.fromList . (\(leftElem,rightElem) -> do
-
+appendNewElement target =
+    unions $
+    flip Set.map target $
+    Data.Set.fromList .
+    (\(leftElem,rightElem) -> do
         newCard <- allRanks
-        [(sort (newCard:leftElem),rightElem)])
-
-        -}
+        if valueCheck 21 (>=) (sort $ newCard:leftElem)
+            then [( sort $ newCard:leftElem , rightElem)]
+            else [] )

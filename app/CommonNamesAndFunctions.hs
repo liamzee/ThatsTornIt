@@ -21,11 +21,17 @@ allRanks :: [Card]
 allRanks = [ Two .. Ace ]
 
 allRanksNested :: Seq [Card]
-allRanksNested = [Two] :<| [Three] :<| [Four] :<| [Five] :<| [Six] :<| [Seven] :<| [Eight] :<| [Nine] :<| [Ten_Jack_Queen_King] :<| Empty
-
-
-
-
+allRanksNested = 
+    [Two] :<|
+    [Three] :<|
+    [Four] :<|
+    [Five] :<|
+    [Six] :<|
+    [Seven] :<|
+    [Eight] :<|
+    [Nine] :<|
+    [Ten_Jack_Queen_King] :<|
+    Empty
 
 -- | Hands that are "naturals"
 
@@ -73,13 +79,36 @@ seqIsPrefixOf elementToBeChecked (x:<|xs) | elementToBeChecked == x = True
 
 numberOfCardsIn :: Card -> [Card] -> Double
 numberOfCardsIn specificCard =
-      
-    fromIntegral . Prelude.length . Prelude.filter (==specificCard)
+    fromIntegral .
+    Prelude.length .
+    Prelude.filter (==specificCard)
 
 probabilityTenJackQueenKing :: [Card] -> Double
-probabilityTenJackQueenKing !cardsInPlay =
-    ( 128 - numberOfCardsIn Ten_Jack_Queen_King cardsInPlay ) /
-    (416 - fromIntegral (Prelude.length cardsInPlay) )
+probabilityTenJackQueenKing cardsInPlay =
+    (
+        128 - 
+        numberOfCardsIn Ten_Jack_Queen_King cardsInPlay
+    )
+    /
+    (
+        416 -
+        (fromIntegral $ Prelude.length cardsInPlay)
+    )
+
+
+probabilityOther :: [Card] -> Card -> Double
+probabilityOther cardsInPlay other =
+    (
+        32 - 
+        numberOfCardsIn other cardsInPlay
+    )
+    /
+    (
+        416 -
+        (fromIntegral $ Prelude.length cardsInPlay)
+    )
+
+
 
 
 
@@ -88,8 +117,10 @@ probabilityTenJackQueenKing !cardsInPlay =
 
 appendNewCardPlayer :: CardsInPlay -> Seq CardsInPlay
 appendNewCardPlayer cardsInPlay@( playerCards , dealerFaceUp ) =
-    fmap (flip (,) dealerFaceUp) . Seq.filter (valueCheck 21 (>=)) $
-    ((pure playerCards) :: Seq [Card] )<**> (flip (<>) <$> allRanksNested )
+    fmap (flip (,) dealerFaceUp) .
+    Seq.filter (valueCheck 21 (>=)) $
+    ((pure playerCards)) <**>
+    (flip (<>) <$> allRanksNested )
 
 
 probabilityOfPlayerDraw :: CardsInPlay -> Probability
@@ -99,8 +130,3 @@ probabilityOfPlayerDraw cardsInPlay@(playerCards, dealerCards) =
         [] -> 1
         [Ten_Jack_Queen_King] -> probabilityTenJackQueenKing combinedCardsInPlay
         [otherCard] -> (probabilityOther combinedCardsInPlay otherCard)
-
-probabilityOther :: [Card] -> Card -> Double
-probabilityOther cardsInPlay other =
-    ( 32 - numberOfCardsIn other cardsInPlay ) /
-    (416 - fromIntegral (Prelude.length cardsInPlay) )

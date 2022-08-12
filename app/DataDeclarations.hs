@@ -33,10 +33,22 @@ data Card =
     
     deriving (Generic, Eq, Enum, Show, Ord)
 
+-- Because I'm scared to use string
+
+data JSONLabels =
+
+      FirstRoundWithSplit
+    | FirstRoundWithoutSplit
+    | NormalPlay
+
+    deriving (Generic, Show)
+
 instance FromJSON Action
 instance FromJSON Card
 instance ToJSON Action
 instance ToJSON Card
+instance FromJSON JSONLabels
+instance ToJSON JSONLabels
 
 -- Pattern synonym for Ten_Jack_Queen_King added for debugging purposes.
 
@@ -72,7 +84,7 @@ newtype GameTreeContents =
 
     GameTreeContents
     {
-    gameTreeContents :: [Suggestion]
+    gameTreeContents :: [[(JSONLabels,CardsInPlay,Suggestion)]]
     }
 
     deriving (Generic, Show)

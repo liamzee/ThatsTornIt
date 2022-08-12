@@ -70,26 +70,16 @@
   (major1) == 1 && (major2) <  11 || \
   (major1) == 1 && (major2) == 11 && (minor) <= 1)
 #endif /* MIN_VERSION_time */
-/* package vector-0.13.0.0 */
-#ifndef VERSION_vector
-#define VERSION_vector "0.13.0.0"
-#endif /* VERSION_vector */
-#ifndef MIN_VERSION_vector
-#define MIN_VERSION_vector(major1,major2,minor) (\
+/* package tinyfiledialogs-0.2.1.0 */
+#ifndef VERSION_tinyfiledialogs
+#define VERSION_tinyfiledialogs "0.2.1.0"
+#endif /* VERSION_tinyfiledialogs */
+#ifndef MIN_VERSION_tinyfiledialogs
+#define MIN_VERSION_tinyfiledialogs(major1,major2,minor) (\
   (major1) <  0 || \
-  (major1) == 0 && (major2) <  13 || \
-  (major1) == 0 && (major2) == 13 && (minor) <= 0)
-#endif /* MIN_VERSION_vector */
-/* package vector-algorithms-0.9.0.1 */
-#ifndef VERSION_vector_algorithms
-#define VERSION_vector_algorithms "0.9.0.1"
-#endif /* VERSION_vector_algorithms */
-#ifndef MIN_VERSION_vector_algorithms
-#define MIN_VERSION_vector_algorithms(major1,major2,minor) (\
-  (major1) <  0 || \
-  (major1) == 0 && (major2) <  9 || \
-  (major1) == 0 && (major2) == 9 && (minor) <= 0)
-#endif /* MIN_VERSION_vector_algorithms */
+  (major1) == 0 && (major2) <  2 || \
+  (major1) == 0 && (major2) == 2 && (minor) <= 1)
+#endif /* MIN_VERSION_tinyfiledialogs */
 
 /* tool gcc-10.2.0 */
 #ifndef TOOL_VERSION_gcc

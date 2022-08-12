@@ -1,4 +1,4 @@
-
+{-# LANGUAGE OverloadedLists #-}
 
 module DealerHands where
 
@@ -20,28 +20,20 @@ import qualified Data.Sequence as Seq
 dealerHandsNotSix :: Seq DealerCards
 dealerHandsNotSix = Seq.filter ( (/= 6 ) . Prelude.length ) $ dealerHands
 
+dealerHandsNotSixGen :: Card -> Seq DealerCards
+dealerHandsNotSixGen card = Seq.filter ( (/=6) . Prelude.length ) $ dealerHandsGen card
 
 
 -- Specific, individual subsets of dealerHands that don't have Six-Card-Charlie
 
-dealerHands21 :: Seq DealerCards
-dealerHands21 = Seq.filter (valueCheck 21 (==) ) dealerHandsNotSix
-
-dealerHands20 :: Seq DealerCards
-dealerHands20 = Seq.filter (valueCheck 20 (==) ) dealerHandsNotSix
-
-dealerHands19 :: Seq DealerCards
-dealerHands19 = Seq.filter (valueCheck 19 (==) ) dealerHandsNotSix
-
-dealerHands18 :: Seq DealerCards
-dealerHands18 = Seq.filter (valueCheck 18 (==) ) dealerHandsNotSix
-
-dealerHands17 :: Seq DealerCards
-dealerHands17 = Seq.filter (valueCheck 17 (==) ) dealerHandsNotSix
-
 dealerHandsNatural :: Seq DealerCards
 dealerHandsNatural = natural
 
+dealerHands21 :: Seq DealerCards
+dealerHands21 = Seq.filter ( valueCheck 21 (==)) . Seq.filter ( (==6) . Prelude.length ) $ dealerHands
+
+dealerHands21Gen :: Card -> Seq DealerCards
+dealerHands21Gen card = Seq.filter ( valueCheck 21 (==)) . Seq.filter ( (==6) . Prelude.length ) $ dealerHandsGen card
 
 
 --Dealer Six-Card-Charlie hands
@@ -50,6 +42,9 @@ dealerHandsNatural = natural
 
 dealerHandsSix :: Seq DealerCards
 dealerHandsSix = Seq.filter ( (==6) . Prelude.length ) dealerHands
+
+dealerHandsSixGen :: Card -> Seq DealerCards
+dealerHandsSixGen card = Seq.filter ( (==6) . Prelude.length ) ( dealerHandsGen card )
 
 
 
@@ -63,6 +58,9 @@ dealerHandsSix = Seq.filter ( (==6) . Prelude.length ) dealerHands
 dealerHands :: Seq DealerCards
 dealerHands = iterate appendNewCardDealer (allRanksNested) !! 5
 
+dealerHandsGen :: Card -> Seq DealerCards
+dealerHandsGen specificCard = iterate appendNewCardDealer ([[specificCard]]) !! 5
+
 
 
 -- | Appends a new card to a set of cards, but starts by splitting
@@ -74,11 +72,16 @@ appendNewCardDealer :: Seq [Card] -> Seq [Card]
 appendNewCardDealer preExistingCards =
 
     let dealerStandCards = Seq.filter ( valueCheck 17 (<=) ) preExistingCards
+
         dealerHitCards =
           
             Seq.filter ( valueCheck 21 (>=) ) $
-            ( Seq.filter ( valueCheck 17 (>) ) preExistingCards ) <**>
-            (flip (<>) <$> allRanksNested) in
+            Seq.filter ( valueCheck 17 (>) ) preExistingCards <**>
+            (
+                flip (<>) <$> allRanksNested
+            ) 
+            
+            in
 
           --Last value filters preExistingCards based on player hitting,
           --starting at the end. The ((:) <$> deck) <*> adds cards, then
