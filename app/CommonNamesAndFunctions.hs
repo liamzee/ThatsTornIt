@@ -9,6 +9,7 @@ import Control.Applicative ((<**>))
 import Data.List (intersect)
 import Data.Set (Set)
 import Control.Applicative ((<**>))
+import Data.Vector
 
 
 
@@ -22,6 +23,9 @@ allRanks = [ Two .. Ace ]
 
 natural :: [[Card]]
 natural = [ [ Ace , Ten_Jack_Queen_King ] , [ Ten_Jack_Queen_King , Ace ] ]
+
+naturalSet :: Set (Card, Vector Card)
+naturalSet = [(Ace, [Ten_Jack_Queen_King]),(Ten_Jack_Queen_King,[Ace])]
 
 -- Some safe versions of list functions, written with nil as a default value
 
@@ -48,8 +52,8 @@ safeLastThroughNil = \case
 numberOfCardsIn :: Card -> [Card] -> Int
 numberOfCardsIn specificCard =
     
-    length .
-    filter (==specificCard)
+    Prelude.length .
+    Prelude.filter (==specificCard)
 
 probabilityTenJackQueenKing :: [Card] -> Double
 probabilityTenJackQueenKing cardsInPlay =
@@ -85,7 +89,7 @@ probabilityOther cardsInPlay other =
 appendNewCardPlayer :: CardsInPlay -> [CardsInPlay]
 appendNewCardPlayer cardsInPlay@( playerCards , dealerFaceUp ) =
     fmap (flip (,) dealerFaceUp) .
-    filter (valueCheck 21 (>=)) $
+    Prelude.filter (valueCheck 21 (>=)) $
     [playerCards] <**>
     (
         (flip (<>).pure) <$>

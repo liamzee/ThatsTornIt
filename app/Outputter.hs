@@ -11,7 +11,7 @@ import DataDeclarations
       GameTreeContents(GameTreeContents),
       BlackjackSuggestions(BlackjackSuggestions), Card (Two, Ace), DealerCards, PlayerCards, JSONLabels (..) )
 import Data.Aeson ( encode, FromJSON, ToJSON )
-import Graphics.UI.TinyFileDialogs ( saveFileDialog, OK (OK), messageBox, IconType(Error) )
+--import Graphics.UI.TinyFileDialogs ( saveFileDialog, OK (OK), messageBox, IconType(Error) )
 import Data.Text (empty, unpack, Text)
 import Data.Maybe (fromMaybe)
 import Data.ByteString.Lazy ( writeFile )
@@ -24,7 +24,7 @@ import Data.Set ( Set, fromList, toList, unions )
 import qualified Data.Set as Set
 
 --IO Code
-
+{-
 filePathMaker :: IO Data.Text.Text
 filePathMaker =
    fromMaybe Data.Text.empty <$> saveFileDialog
@@ -39,7 +39,7 @@ outputMain = do
              Error OK >>
              error "no file provided"
         else writeFile filePath $ encode blackjackSuggestions
-
+-}
 
 
 --Code for 

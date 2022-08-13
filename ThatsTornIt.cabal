@@ -42,6 +42,7 @@ executable ThatsTornIt
                       text,
                       bytestring,
                       containers,
-                      tinyfiledialogs
+                      vector
+                      --tinyfiledialogs
     hs-source-dirs:   app
     default-language: Haskell2010

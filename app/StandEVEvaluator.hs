@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns, LambdaCase #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module StandEVEvaluator where
 
@@ -11,13 +12,17 @@ import DataDeclarations
 import CommonNamesAndFunctions
     ( natural,
       safeTailThroughNil,
-      probabilityTenJackQueenKing, numberOfCardsIn, probabilityOther, safeInitThroughNil)
+      probabilityTenJackQueenKing, numberOfCardsIn, probabilityOther, safeInitThroughNil, naturalSet)
 import DealerHands
     ( dealerHandsNotSix,
       dealerHands21,
-      dealerHandsSix)
-import CardValueChecker ( cardsToValue, valueCheck )
+      dealerHandsSix, dealerHandsSetSix, dealerHandsSetNotSix21, dealerHandsSetNotSix)
+import CardValueChecker ( cardsToValue, valueCheck, valueCheckSet, valueCheckSetVector )
 import Data.List ((\\), isPrefixOf, isSuffixOf)
+import Data.Set
+import qualified Data.Set as Set
+import Data.Vector
+import qualified Data.Vector as Vec
 
 
 {- The following functions calculate the stand EV, which is fundamental for
@@ -68,23 +73,23 @@ calculateStandEV cardsInPlay@(playerCards, _) =
     
     let
     naturalEV =
-        2.5 - 1.5 * calcDealer cardsInPlay [natural]
+        2.5 - 1.5 * calcDealerSet cardsInPlay [naturalSet]
     winMinusLossMinusTie lossHands tieHands =
         2 -
-        (2 * calcDealer cardsInPlay lossHands) -
-        calcDealer cardsInPlay tieHands
+        (2 * calcDealerSet cardsInPlay lossHands) -
+        calcDealerSet cardsInPlay tieHands
     in
 
     case playerCards of
         [Ace,Ten_Jack_Queen_King] -> naturalEV
         [Ten_Jack_Queen_King,Ace] -> naturalEV
         playerCards | Prelude.length playerCards == 6 ->  winMinusLossMinusTie
-            [   
-                natural,
-                Prelude.filter (valueCheck (cardsToValue playerCards) (<)) dealerHandsSix
+            [
+                naturalSet,
+                Set.filter (valueCheckSetVector (cardsToValue playerCards) (<)) dealerHandsSetSix
             ]
             [
-                Prelude.filter (valueCheck (cardsToValue playerCards) (==)) dealerHandsSix
+                Set.filter (valueCheckSetVector (cardsToValue playerCards) (==)) dealerHandsSetSix
             ]
 
             
@@ -102,21 +107,21 @@ calculateStandEV cardsInPlay@(playerCards, _) =
         playerCards  | cardsToValue playerCards == 21 ->
             winMinusLossMinusTie
             [
-                dealerHandsSix
+                dealerHandsSetSix
             ]
             [
-                dealerHands21,
-                natural
+                dealerHandsSetNotSix21,
+                naturalSet
             ]
 
         playerCards ->
             winMinusLossMinusTie
             [
-                dealerHandsSix , 
-                filter (valueCheck (cardsToValue playerCards) (<)) dealerHandsNotSix
+                dealerHandsSetSix , 
+                Set.filter (valueCheckSetVector (cardsToValue playerCards) (<)) dealerHandsSetNotSix
             ]
             [
-                filter (valueCheck (cardsToValue playerCards) (==)) dealerHandsNotSix
+                Set.filter (valueCheckSetVector (cardsToValue playerCards) (==)) dealerHandsSetNotSix
             ]
 
 -- |
@@ -128,14 +133,13 @@ calcDealer ( playerCards , dealerFaceUp ) =
             0
         (x:xs) ->
             go x + calcDealer (playerCards, dealerFaceUp) xs
-
   where
     go :: [DealerCards] -> Probability
     go =
-        sum .
-        fmap (probabilityOfDealerHand (playerCards++dealerFaceUp) . safeTailThroughNil ) .
+        Prelude.sum .
+        fmap (probabilityOfDealerHand (playerCards <> dealerFaceUp) . safeTailThroughNil ) .
         Prelude.filter (isPrefixOf dealerFaceUp ) .
-        reverse
+        Prelude.reverse
 
 -- |
   
@@ -150,3 +154,39 @@ probabilityOfDealerHand cardsInPlay = \case
         probabilityOther cardsInPlay otherCard *
         probabilityOfDealerHand (otherCard:cardsInPlay) rest
 
+
+-- Rebuilding for the Set (Card, [Card]) setup.
+
+calcDealerSet :: CardsInPlay -> [Set (Card, Vector Card)] -> Probability
+calcDealerSet ( playerCards , [dealerFaceUp] ) =
+    \case
+        [] ->
+            0
+        x:xs ->
+            go x +
+            calcDealerSet (playerCards, [dealerFaceUp]) xs
+
+  where
+    go :: Set (Card, Vector Card) -> Probability
+    go =
+        Prelude.sum .
+        Set.toList .
+        Set.map
+        (
+            \v@(firstCard,_) -> probabilityOfDealerHandSet (dealerFaceUp:playerCards) v
+        ) 
+        .
+        Set.filter (\(u,_) -> dealerFaceUp == u )
+
+
+probabilityOfDealerHandSet :: [Card] -> (Card, Vector Card) -> Probability
+probabilityOfDealerHandSet (cardsInPlay) (first,(Vec.toList -> rest)) =
+    case rest of
+
+        [] -> 1
+        (Ten_Jack_Queen_King:rest) ->
+            probabilityTenJackQueenKing cardsInPlay *
+            probabilityOfDealerHandSet (Ten_Jack_Queen_King:cardsInPlay) (first,Vec.fromList rest)
+        (otherCard:rest) -> 
+            probabilityOther cardsInPlay otherCard *
+            probabilityOfDealerHandSet (otherCard:cardsInPlay) (first,Vec.fromList rest)
