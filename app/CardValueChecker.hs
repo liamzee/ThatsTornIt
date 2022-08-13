@@ -24,25 +24,25 @@ cardsToValue cards = go cards 0 0
     go input aces otherValue =
       case input of
         Ace:xs ->
-            go xs (aces+1) $ otherValue
+            go xs (aces+1) otherValue
         Two:xs ->
-            go xs aces $ otherValue + 2
+            go xs aces (otherValue + 2)
         Three:xs ->
-            go xs aces $ otherValue + 3
+            go xs aces (otherValue + 3)
         Four:xs ->
-            go xs aces $ otherValue + 4
+            go xs aces (otherValue + 4)
         Five:xs ->
-            go xs aces $ otherValue + 5
+            go xs aces (otherValue + 5)
         Six:xs ->
-            go xs aces $ otherValue + 6
+            go xs aces (otherValue + 6)
         Seven:xs ->
-            go xs aces $ otherValue + 7
+            go xs aces (otherValue + 7)
         Eight:xs ->
-            go xs aces $ otherValue + 8
+            go xs aces (otherValue + 8)
         Nine:xs ->
-            go xs aces $ otherValue + 9
+            go xs aces (otherValue + 9)
         Ten_Jack_Queen_King:xs ->
-            go xs aces $ otherValue + 10
+            go xs aces (otherValue + 10)
 
 
 -- | Mostly avoids a direct call to cardsToValue, otherwise mostly identical to directly

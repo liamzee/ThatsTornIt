@@ -19,14 +19,14 @@ import qualified Data.Sequence as Seq
 -- split vs hit options exist.
 
 
-
 evaluateInitial :: CardsInPlay -> Suggestion
 evaluateInitial cardsInPlay = case cardsInPlay of
     ( [firstCard , secondCard], _ ) | firstCard == secondCard ->
         maximum $ optionsWithSplit cardsInPlay
     _ -> maximum $ optionsWithoutSplit cardsInPlay
 
-optionsWithSplit :: CardsInPlay -> Seq Suggestion
+
+optionsWithSplit :: CardsInPlay -> [Suggestion]
 optionsWithSplit cardsInPlay =
     [
         doubleCards cardsInPlay ,
@@ -35,13 +35,15 @@ optionsWithSplit cardsInPlay =
         evaluateHitVsStand cardsInPlay 
     ]
 
-optionsWithoutSplit :: CardsInPlay -> Seq Suggestion
+
+optionsWithoutSplit :: CardsInPlay -> [Suggestion]
 optionsWithoutSplit cardsInPlay =
     [
         doubleCards cardsInPlay ,
         surrender ,
         evaluateHitVsStand cardsInPlay
     ]
+
 
 optionsWithoutSplitOrSurrender :: CardsInPlay -> [Suggestion]
 optionsWithoutSplitOrSurrender cardsInPlay =
@@ -50,8 +52,10 @@ optionsWithoutSplitOrSurrender cardsInPlay =
         evaluateHitVsStand cardsInPlay
     ]
 
+
 surrender :: Suggestion
 surrender = ( 0.50 , Surrender )
+
 
 doubleCards :: CardsInPlay -> Suggestion
 doubleCards cardsInPlay = 
@@ -72,7 +76,6 @@ doubleCards cardsInPlay =
         probabilityOfPlayerDraw newCardsInPlay *
         calculateStandEV newCardsInPlay
 
-        
 
 splitCards :: CardsInPlay -> Suggestion
 splitCards (playerCards , dealerFaceUp) = 

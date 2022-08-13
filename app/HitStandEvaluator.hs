@@ -1,10 +1,11 @@
 module HitStandEvaluator where
 
 import DataDeclarations
+    ( Action(Stand, Hit), CardsInPlay, Suggestion )
 import CommonNamesAndFunctions
     ( appendNewCardPlayer, probabilityOfPlayerDraw )
 import StandEVEvaluator (calculateStandEV)
-import Data.Sequence
+import Data.Sequence ( Seq(Empty) )
 
 
 {- Terrible performance here, with 8 minute evaluate times on O2.
@@ -13,30 +14,35 @@ http://www.bjstrat.net/cgi-bin/cdca.cgi . -}
 
 evaluateHitVsStand :: CardsInPlay -> Suggestion
 evaluateHitVsStand cardsInPlay =
-
-    calculateStands cardsInPlay `evaluateHits`
-    correctProbabilityCardsInPlay <$>
-    appendNewCardPlayer cardsInPlay
-
+    evaluateHits
+    (   
+        calculateStandEV cardsInPlay ,
+        Stand
+    )
+    (
+        correctProbabilityCardsInPlay <$>
+        appendNewCardPlayer cardsInPlay
+    )
   where
-
-    
-    
     correctProbabilityCardsInPlay :: CardsInPlay -> Suggestion
     correctProbabilityCardsInPlay cardsInPlayNew =
-
-        ( probabilityOfPlayerDraw cardsInPlayNew *
-        ( fst $ evaluateHitVsStand cardsInPlayNew )
-        , Hit )
-
-
-
-infixl 0 `evaluateHits`
-evaluateHits :: Suggestion -> Seq Suggestion -> Suggestion
-evaluateHits stand Empty = stand
-evaluateHits stand hit = max stand (sum $ fst <$> hit, Hit)
+        (
+            probabilityOfPlayerDraw cardsInPlayNew *
+            (
+                fst $
+                evaluateHitVsStand cardsInPlayNew
+            )
+        ,
+        Hit
+        )
 
 
+evaluateHits :: Suggestion -> [Suggestion] -> Suggestion
+evaluateHits stand hit =
+    case hit of
+        [] ->
+            stand
+        hit ->
+            max stand (sum $ fst <$> hit, Hit)
 
-calculateStands :: CardsInPlay -> Suggestion
-calculateStands cardsInPlay = ( calculateStandEV cardsInPlay , Stand )
+

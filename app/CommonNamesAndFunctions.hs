@@ -8,120 +8,91 @@ import CardValueChecker
 import Control.Applicative ((<**>))
 import Data.List (intersect)
 import Data.Set (Set)
-import Data.Sequence
-import qualified Data.Sequence as Seq
 import Control.Applicative ((<**>))
 
 
 
 -- | A list of cards that comprise a rank, or all cards of
--- the same suit. Note absence of ReducedAce.
+-- the same suit.
 
 allRanks :: [Card]
 allRanks = [ Two .. Ace ]
 
-allRanksNested :: Seq [Card]
-allRanksNested = 
-    [Two] :<|
-    [Three] :<|
-    [Four] :<|
-    [Five] :<|
-    [Six] :<|
-    [Seven] :<|
-    [Eight] :<|
-    [Nine] :<|
-    [Ten_Jack_Queen_King] :<|
-    Empty
-
 -- | Hands that are "naturals"
 
-natural :: Seq [Card]
+natural :: [[Card]]
 natural = [ [ Ace , Ten_Jack_Queen_King ] , [ Ten_Jack_Queen_King , Ace ] ]
-
-
-
-
 
 -- Some safe versions of list functions, written with nil as a default value
 
 safeTailThroughNil :: [a] -> [a]
-safeTailThroughNil = \case
-
+safeTailThroughNil =
+  \case
     [] -> []
     x:xs -> xs
 
 safeInitThroughNil :: [a] -> [a]
 safeInitThroughNil = \case
-
     [] -> []
     [x] -> []
     x:xs -> x : safeInitThroughNil xs
 
 safeLastThroughNil :: [a] -> [a]
 safeLastThroughNil = \case
-
     [] -> []
     [x] -> [x]
     x:xs -> safeLastThroughNil xs
 
-seqIsPrefixOf :: Eq a => a -> Seq a -> Bool
-seqIsPrefixOf _ Empty = False
-seqIsPrefixOf elementToBeChecked (x:<|xs) | elementToBeChecked == x = True
-   | otherwise = False
-
-
-
 -- Used both in dealer and player sides, easier to move this out of a where block.
 
-
-
-
-
-numberOfCardsIn :: Card -> [Card] -> Double
+numberOfCardsIn :: Card -> [Card] -> Int
 numberOfCardsIn specificCard =
-    fromIntegral .
-    Prelude.length .
-    Prelude.filter (==specificCard)
+    
+    length .
+    filter (==specificCard)
 
 probabilityTenJackQueenKing :: [Card] -> Double
 probabilityTenJackQueenKing cardsInPlay =
+    fromIntegral
     (
         128 - 
         numberOfCardsIn Ten_Jack_Queen_King cardsInPlay
     )
-    /
+        /
+    fromIntegral
     (
         416 -
-        (fromIntegral $ Prelude.length cardsInPlay)
+        Prelude.length cardsInPlay
     )
-
 
 probabilityOther :: [Card] -> Card -> Double
 probabilityOther cardsInPlay other =
+    fromIntegral
     (
         32 - 
         numberOfCardsIn other cardsInPlay
     )
-    /
+        /
+    fromIntegral
     (
         416 -
-        (fromIntegral $ Prelude.length cardsInPlay)
+        Prelude.length cardsInPlay
     )
-
-
-
-
 
 --AppendNewCardPlayer has been moved out from hit vs stand decision section, since it's going to be
 --reused by the double and split functions.
 
-appendNewCardPlayer :: CardsInPlay -> Seq CardsInPlay
+appendNewCardPlayer :: CardsInPlay -> [CardsInPlay]
 appendNewCardPlayer cardsInPlay@( playerCards , dealerFaceUp ) =
     fmap (flip (,) dealerFaceUp) .
-    Seq.filter (valueCheck 21 (>=)) $
-    ((pure playerCards)) <**>
-    (flip (<>) <$> allRanksNested )
+    filter (valueCheck 21 (>=)) $
+    [playerCards] <**>
+    (
+        (flip (<>).pure) <$>
+        allRanks
+    )
 
+--Next function is used both in top-level evaluator and hitstand evaluator.
 
 probabilityOfPlayerDraw :: CardsInPlay -> Probability
 probabilityOfPlayerDraw cardsInPlay@(playerCards, dealerCards) =
@@ -129,4 +100,4 @@ probabilityOfPlayerDraw cardsInPlay@(playerCards, dealerCards) =
     case safeLastThroughNil playerCards of
         [] -> 1
         [Ten_Jack_Queen_King] -> probabilityTenJackQueenKing combinedCardsInPlay
-        [otherCard] -> (probabilityOther combinedCardsInPlay otherCard)
+        [otherCard] -> probabilityOther combinedCardsInPlay otherCard

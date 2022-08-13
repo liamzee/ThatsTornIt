@@ -40,6 +40,10 @@ outputMain = do
              error "no file provided"
         else writeFile filePath $ encode blackjackSuggestions
 
+
+
+--Code for 
+
 blackjackSuggestions :: BlackjackSuggestions
 blackjackSuggestions = BlackjackSuggestions $ seedToBlackjackContents <$> cardinalStates
 
@@ -52,9 +56,42 @@ findSameInitial ([a,b],k) =
     toList $ Set.filter (\case; (c:_,e) -> c == a && e == k; _ ->  False) gameStates
 
 transformToTuple :: CardsInPlay -> [(JSONLabels,CardsInPlay, Suggestion)]
-transformToTuple input@([a,b],_) | a == b = [(FirstRoundWithSplit, input , evaluateInitial input ),(FirstRoundWithoutSplit ,input , maximum $ optionsWithoutSplit input),(NormalPlay, input , evaluateHitVsStand input)]
-transformToTuple input@([_,_],_) = [(FirstRoundWithoutSplit, input , evaluateInitial input),(NormalPlay, input, evaluateHitVsStand input)]
-transformToTuple input = [(NormalPlay, input, evaluateHitVsStand input)]
+transformToTuple input =
+    case input of
+        ([a,b],_) | a == b ->
+            [
+                splittable,
+                unsplittable,
+                normalPlay
+            ]
+        ([_,_],_) ->
+            [
+                unsplittable,
+                normalPlay
+            ]
+        input -> 
+            [
+                normalPlay
+            ]
+  where
+    splittable = 
+        (
+            FirstRoundWithSplit,
+            input,
+            evaluateInitial input
+        )
+    unsplittable =
+        (
+            FirstRoundWithoutSplit,
+            input,
+            maximum $ optionsWithoutSplit input
+        )
+    normalPlay =
+        (
+            NormalPlay,
+            input,
+            evaluateHitVsStand input
+        )
 
 -- Functions used to generate all game states / possible cards in play.
 
@@ -80,8 +117,7 @@ makeGameTree inputSeed =
     gameTreeSeed <>
     appendNewElement gameTreeSeed <>
     appendNewElement (appendNewElement gameTreeSeed) <>
-    appendNewElement (appendNewElement (appendNewElement gameTreeSeed)) <>
-    appendNewElement (appendNewElement (appendNewElement (appendNewElement gameTreeSeed)))
+    appendNewElement (appendNewElement (appendNewElement gameTreeSeed))
 
 appendNewElement :: Set (CardsInPlay) -> Set (CardsInPlay)
 appendNewElement target =
