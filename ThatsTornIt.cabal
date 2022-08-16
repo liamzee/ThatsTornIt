@@ -25,14 +25,7 @@ executable ThatsTornIt
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules:    DataDeclarations,
-                      CommonNamesAndFunctions,
-                      CardValueChecker,
-                      DealerHands,
-                      TopLevelEvaluator,
-                      HitStandEvaluator,
-                      StandEVEvaluator,
-                      Outputter
+--    other-modules:    
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -42,7 +35,10 @@ executable ThatsTornIt
                       text,
                       bytestring,
                       containers,
-                      vector
-                      --tinyfiledialogs
+                      vector,
+                      criterion,
+                      tinyfiledialogs,
+                      deepseq,
+                      parallel
     hs-source-dirs:   app
     default-language: Haskell2010
