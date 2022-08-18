@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedLists, OverloadedStrings, LambdaCase #-}
-{-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
-{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE DeriveGeneric, DeriveAnyClass, ViewPatterns #-}
 
 {-This file, at least for now, is going to be done as a single module.
 Comments like these will split up the parts of the module, it's not good
@@ -16,17 +15,19 @@ import Data.Time (getCurrentTime)
 import Data.Aeson ( FromJSON, ToJSON, encode )
 import qualified Data.ByteString.Lazy as LB
 import GHC.Generics (Generic)
-import Data.Vector ( Vector, generate, (!), modify, unfoldrExactN )
 import Graphics.UI.TinyFileDialogs ( saveFileDialog )
 import Data.Text ( Text, unpack )
 import Data.Maybe ( fromMaybe )
 import Data.Vector.Generic.Mutable (write)
-import Data.Vector (empty, cons, snoc, last, null, splitAt, init)
-import Prelude hiding (null, length, last, splitAt, init)
+import Data.Vector ( Vector, generate, (!), modify,
+    empty, cons, snoc, last,
+    null, splitAt, init, length,
+    sum, tail, filter, unfoldrExactN)
+import Prelude hiding (sum, null, length, last,
+    splitAt, init, tail, filter)
 import Criterion.Main
 import Control.DeepSeq
 import Control.Parallel.Strategies
-import Data.Vector (length)
 import Control.Monad ((<=<), (>=>))
 
 
@@ -42,7 +43,7 @@ data Card
     | TenJackQueenKing
     | Ace
 
-    deriving (Show, Generic, Eq, Ord, NFData)
+    deriving (Show, Generic, Eq, Ord, Enum, NFData)
 
 instance FromJSON Card
 instance ToJSON Card
@@ -62,9 +63,9 @@ instance ToJSON Action
 
 
 data AllowedActions
-    = ActionsWithSplit
-    | ActionsWithoutSplit
-    | ActionsWithoutSurrender
+    = ActionsSplitSurrenderDouble
+    | ActionsSurrenderDouble
+    | ActionsDouble
     | HitStandOnly
 
     deriving (Show, Generic, Eq, Ord, NFData )
@@ -101,6 +102,7 @@ instance ToJSON BlackjackActionDirectoryTopLevel
 
 type DealerFaceUp = Card
 type PlayerCards = Vector Card
+type DealerHand = Vector Card
 
 
 newtype BranchContents
@@ -170,7 +172,7 @@ getFilePath = pure "C:\\Users\\Liam\\Desktop\\crapjson.json"
 sanitize :: Maybe Text -> String
 sanitize =
     unpack .
-    fromMaybe 
+    fromMaybe
     (
         error "could not get filePath, perhaps you canceled the prompt?"
     )
@@ -202,10 +204,10 @@ makeMainBranches =
     cons (firstGameState, deriveBranchContents firstGameState) $ unfoldrExactN 549 (dupe.processGameState) (firstGameState, deriveBranchContents firstGameState)
 
   where
-    
+
     go :: Int -> ( GameState , BranchContents )
-    go n = iterate processGameState (firstGameState , deriveBranchContents firstGameState) !! (n)
-    
+    go n = iterate processGameState (firstGameState , deriveBranchContents firstGameState) !! n
+
     firstGameState :: GameState
     firstGameState =
         GameState
@@ -223,22 +225,22 @@ makeMainBranches =
             createNewGameState gameState ,
             deriveBranchContents ( createNewGameState gameState )
         )
-    
+
     createNewGameState :: GameState -> GameState
-    createNewGameState (GameState (contents)) =
+    createNewGameState (GameState contents) =
         GameState $ addOneToContentsTwoCards contents
 
     addOneToContentsTwoCards :: ( Vector Card , Card ) -> ( Vector Card , Card )
     addOneToContentsTwoCards ( vector , dealerFaceUp ) =
         case ( vector!0 , vector!1 ) of
-            ( Ace , Ace ) -> 
+            ( Ace , Ace ) ->
                 (
                     generate 2 ( const Two ) ,
                     incrementCardAceUnsafe dealerFaceUp
                 )
-            ( notAce , Ace ) -> 
+            ( notAce , Ace ) ->
                 (
-                    modify 
+                    modify
                     (
                         \u -> do
                             write u 0 $ incrementCardAceUnsafe notAce
@@ -269,11 +271,11 @@ incrementCardAceUnsafe = \case
     Eight -> Nine
     Nine -> TenJackQueenKing
     TenJackQueenKing -> Ace
-        
+
 -- Now we see the first conditional player hand generation.
 
 twoToAce :: Vector Card
-twoToAce = 
+twoToAce =
     pure Two `snoc`
     Three `snoc`
     Four `snoc`
@@ -291,7 +293,7 @@ deriveBranchContents seedState =
     let newestCard :: GameState -> Card
         newestCard = last . fst . gameState in
     BranchContents $ parallelAppendTo4 . parallelAppendTo3 $ appendTo2 ( seedState , AnnotatedSuggestions $ makeAnnotatedSuggestions $ gameState seedState )
-        where 
+        where
             parallelAppendTo3 :: Vector (GameState, AnnotatedSuggestions) -> Vector (GameState, AnnotatedSuggestions)
             parallelAppendTo3 input =
                 runEval $ do
@@ -350,7 +352,7 @@ deriveBranchContents seedState =
                         newCard <- twoToAce
                         let newHand = snoc (fst $ gameState . fst $ target ) newCard
                         let dealerCard = snd $ gameState seedState
-                        if newCard < (last . fst . gameState . fst $ target) || 21 < convertToValue (fst . gameState . fst $ target, newCard) 
+                        if newCard < (last . fst . gameState . fst $ target) || 21 < convertToValue (fst . gameState . fst $ target, newCard)
                         then empty
                         else do
                             let newGameState = GameState (newHand , dealerCard)
@@ -363,7 +365,7 @@ deriveBranchContents seedState =
                         newCard <- twoToAce
                         let newHand = snoc (fst $ gameState . fst $ target ) newCard
                         let dealerCard = snd $ gameState seedState
-                        if newCard < (last . fst . gameState . fst $ target) || 21 < convertToValue (fst . gameState . fst $ target, newCard) 
+                        if newCard < (last . fst . gameState . fst $ target) || 21 < convertToValue (fst . gameState . fst $ target, newCard)
                         then empty
                         else do
                             let newGameState = GameState (newHand , dealerCard)
@@ -376,13 +378,12 @@ deriveBranchContents seedState =
                         newCard <- twoToAce
                         let newHand = snoc (fst $ gameState . fst $ target ) newCard
                         let dealerCard = snd $ gameState seedState
-                        if newCard < (last . fst . gameState . fst $ target) || 21 < convertToValue (fst . gameState . fst $ target, newCard) 
+                        if newCard < (last . fst . gameState . fst $ target) || 21 < convertToValue (fst . gameState . fst $ target, newCard)
                         then empty
                         else do
                             let newGameState = GameState (newHand , dealerCard)
                             pure ( newGameState , AnnotatedSuggestions . makeAnnotatedSuggestions . gameState $ newGameState )
-                
-    
+
 
 convertToValue :: ( PlayerCards , Card ) -> Int
 convertToValue (playerCards,card)=
@@ -420,45 +421,318 @@ convertToValue (playerCards,card)=
                 Ace ->
                     go (init inputVector) (aces+1) value
 
-
-                    
-
+--At this point, we have the player hands ready, and we are now going to build the infrastructure that presents the player actions and outcomes.
 
 makeAnnotatedSuggestions :: (PlayerCards, DealerFaceUp) -> Vector (AllowedActions, Suggestion, Probability)
 makeAnnotatedSuggestions input@(playerCards, dealerFaceUp) =
     case length playerCards of
         2
             | playerCards!0 == playerCards!1 ->
-                pure (ActionsWithSplit, Suggestion (0,Hit), ()) <>
-                pure (ActionsWithoutSplit, Suggestion (0,Hit), ()) <>
-                pure (ActionsWithoutSurrender, Suggestion (0,Hit), ()) <>
-                pure (HitStandOnly, Suggestion (0,Hit), ())
+                pure
+                (
+                    ActionsSplitSurrenderDouble
+                    ,
+                    Suggestion $
+                    makeSuggestion ActionsSplitSurrenderDouble $
+                    GameState input
+                    ,
+                    ()
+                )
+                <>
+                pure
+                (
+                    ActionsSurrenderDouble
+                    ,
+                    Suggestion $
+                    makeSuggestion ActionsSurrenderDouble $
+                    GameState input
+                    ,
+                    ()
+                )
+                <>
+                pure
+                (
+                    ActionsDouble
+                    ,
+                    Suggestion $
+                    makeSuggestion ActionsDouble $
+                    GameState input
+                    ,
+                    ()
+                )
+                <>
+                pure
+                (
+                    HitStandOnly
+                    ,
+                    Suggestion $
+                    makeSuggestion HitStandOnly $
+                    GameState input
+                    ,
+                    ()
+                )
             | otherwise ->
-                pure (ActionsWithoutSplit, Suggestion (0,Hit), ()) <>
-                pure (ActionsWithoutSurrender, Suggestion (0,Hit), ()) <>
-                pure (HitStandOnly , Suggestion (0,Hit), ())
+                pure
+                (
+                    ActionsSurrenderDouble
+                    ,
+                    Suggestion $
+                    makeSuggestion ActionsSurrenderDouble $
+                    GameState input
+                    ,
+                    ()
+                )
+                <>
+                pure
+                (
+                    ActionsDouble
+                    ,
+                    Suggestion $
+                    makeSuggestion ActionsDouble $
+                    GameState input
+                    ,
+                    ()
+                )
+                <>
+                pure
+                (
+                    HitStandOnly
+                    ,
+                    Suggestion $
+                    makeSuggestion HitStandOnly $
+                    GameState input,
+                    ()
+                )
         _ ->
-            pure (HitStandOnly, Suggestion (0,Hit), ())
+            pure
+            (
+                HitStandOnly
+                ,
+                Suggestion $
+                makeSuggestion HitStandOnly $
+                GameState input
+                ,
+                ()
+            )
+
+-- Now we actually calculate the suggestions.
+
+-- | filter elements to consider allowedActions
+
+makeSuggestion :: AllowedActions -> GameState -> (EV, Action)
+makeSuggestion allowedActions (GameState gameState) =
+    case allowedActions of
+        ActionsSplitSurrenderDouble ->
+            maximum
+            (
+                pure (doubleAction gameState) `snoc`
+                splitAction gameState `snoc`
+                surrender `snoc`
+                hitOrStand gameState
+            )
+        ActionsSurrenderDouble ->
+            maximum
+            (
+                pure (doubleAction gameState) `snoc`
+                surrender `snoc`
+                hitOrStand gameState
+            )
+        ActionsDouble ->
+            maximum
+            (
+                pure (doubleAction gameState) `snoc`
+                hitOrStand gameState
+            )
+        HitStandOnly ->
+            hitOrStand gameState
+
+        where
+            surrender = ( 0.5 , Surrender )
 
 
---- all of the following is crap, just made to see how well my computer would perform when the code is executed.
+doubleAction :: (PlayerCards, DealerFaceUp) -> (EV, Action)
+doubleAction input = (0,Stand) --error i just want to get this to compile
 
 
-makeSuggestion action (playerCards, dealerFaceUp) =
-    case action of
-        _ -> evaluateEV playerCards $! generateHands (dealerFaceUp)
+splitAction :: (PlayerCards, DealerFaceUp) -> (EV, Action)
+splitAction input = (0,Stand) --error I just want to get this to compile)
 
 
-evaluateEV _ _ = ()
+hitOrStand :: (PlayerCards, DealerFaceUp) -> (EV, Action)
+hitOrStand boardState = max (calculateStandEV boardState, Stand) (calculateHitEV boardState, Hit)
+
+--Stand EV is the root of all player actions, if we assign "bust" or "losing" a value of 0,
+--we don't need to calculate the odds of such, and when we do need bust / loss probability
+--we can simply subtract.
+
+calculateHitEV :: (PlayerCards, DealerFaceUp) -> EV
+calculateHitEV input@(playerCards, dealerFaceUp) =
+    maximum (probabilityOfPlayerDrawOnStandEV <$> appendPlayerCard input) --this is a mess.
 
 
-generateHands dealerFaceUp = appendTo dealerFaceUp
+probabilityOfPlayerDrawOnStandEV :: (PlayerCards, DealerFaceUp) -> EV
+probabilityOfPlayerDrawOnStandEV boardState@(playerCards, dealerFaceUp) =
+    let cardsAlreadyDrawn = playerCards `snoc` dealerFaceUp in
+    calculateStandEV boardState *
+    (
+        fromIntegral
+        (
+            16 -
+            length
+            (filter (== last playerCards) $ init cardsAlreadyDrawn)
+        )
+        /
+        fromIntegral
+        (
+            416 +
+            1 -
+            length cardsAlreadyDrawn
+        )
+    )
+    
+
+
+appendPlayerCard :: (PlayerCards, DealerFaceUp) -> Vector (PlayerCards, DealerFaceUp)
+appendPlayerCard (playerCards, dealerFaceUp) =
+    do
+        newCard <- twoToAce
+        if 21 < convertToValueHand (playerCards `snoc` newCard)
+            then empty
+            else pure (playerCards `snoc` newCard, dealerFaceUp)
+
+
+calculateStandEV :: (PlayerCards, DealerFaceUp) -> EV
+calculateStandEV boardState@(playerCards, dealerFaceUp) =
+    case playerCards of
+        cards 
+            | elem cards $
+            pure (pure Ace `snoc` TenJackQueenKing) `snoc`
+            (pure TenJackQueenKing `snoc` Ace) ->
+                undefined
+            | length cards == 6 ->
+                undefined
+            | 21 == convertToValueHand cards ->
+                undefined
+            | otherwise ->
+                undefined
+
+
+convertToValueHand :: Vector Card -> Int
+convertToValueHand dealerCards =
+    go dealerCards 0 0
   where
-    appendTo target = flip snoc target $
-                        do
-                        newCard <- twoToAce
-                        let newHand = snoc (target) newCard
-                        if pure newCard > target || 21 < convertToValue (target, newCard) 
-                        then empty
-                        else do
-                            pure newHand
+    go inputVector aces value
+        | null inputVector =
+            case True of
+                _ | 21 >= aces * 11 + value ->
+                    aces * 11 + value
+                _ | 0 == aces ->
+                    value
+                _ ->
+                    go empty (aces-1) (value+1)
+        | otherwise =
+            case last inputVector of
+                Two ->
+                    go (init inputVector) aces (value+2)
+                Three ->
+                    go (init inputVector) aces (value+3)
+                Four ->
+                    go (init inputVector) aces (value+4)
+                Five ->
+                    go (init inputVector) aces (value+5)
+                Six ->
+                    go (init inputVector) aces (value+6)
+                Seven ->
+                    go (init inputVector) aces (value+7)
+                Eight ->
+                    go (init inputVector) aces (value+8)
+                Nine ->
+                    go (init inputVector) aces (value+9)
+                TenJackQueenKing ->
+                    go (init inputVector) aces (value+10)
+                Ace ->
+                    go (init inputVector) (aces+1) value
+
+
+appendCardDealer :: Card -> Vector DealerHand
+appendCardDealer dealerFaceUp =
+    appendCard =<<
+    appendCard =<<
+    appendCard =<<
+    appendCard =<< basicHand dealerFaceUp
+  where
+    basicHand :: Card -> Vector DealerHand
+    basicHand dealerFaceUp =
+        snoc (pure dealerFaceUp) <$> twoToAce
+    appendCard :: DealerHand -> Vector DealerHand
+    appendCard hand =
+        if 17 <= convertToValueHand hand
+            then pure hand
+            else do
+                newCard <- twoToAce
+                if 21 < convertToValueHand (snoc (pure dealerFaceUp) newCard) ||
+                    newCard < last hand
+                    then empty
+                    else pure $ snoc hand newCard
+
+
+calculateEV :: (PlayerCards, Card) -> DealerHand -> EV
+calculateEV (uncurry snoc -> cardsInPlay) dealerHand =
+    calculateProbability cardsInPlay (tail dealerHand) 1 *
+    numberOfPermutationsDealerHand (tail dealerHand)
+  where
+    calculateProbability :: Vector Card -> DealerHand -> Double -> EV
+    calculateProbability cardsInPlay (null -> True) storedValue = storedValue
+    calculateProbability cardsInPlay dealerHand storedValue =
+        case dealerHand!0 of
+            TenJackQueenKing ->
+                calculateProbability
+                (cardsInPlay `snoc` (dealerHand!0))
+                (tail dealerHand) $
+                (
+                    128 -
+                    fromIntegral
+                    (
+                        length $
+                        filter (==TenJackQueenKing) cardsInPlay
+                    )
+                    /
+                    416 - fromIntegral (length cardsInPlay)
+                ) * storedValue
+            other ->
+                calculateProbability
+                (cardsInPlay `snoc` (dealerHand!0))
+                (tail dealerHand) $
+                (
+                    32 -
+                    fromIntegral
+                    (
+                        length $
+                        filter (==other) cardsInPlay
+                    )
+                    /
+                    416 - fromIntegral (length cardsInPlay)
+                ) * storedValue
+
+    numberOfPermutationsDealerHand :: Vector Card -> Double
+    numberOfPermutationsDealerHand dealerHand =
+        let lengthOfHand = length dealerHand
+            numberOfSingles = 0 --should be undefined
+            numberOfDoubles = 0 --should be undefined
+            aceCase = 0 in --should be undefinedin
+        fromIntegral $
+                fac lengthOfHand -
+                (
+                    numberOfSingles *
+                    fac (lengthOfHand - 1) +
+                    numberOfDoubles *
+                    fac (lengthOfHand - 2) +
+                    aceCase
+                )
+         -- needs revision, this is a placeholder to get this to compile
+
+fac :: Int -> Int
+fac = facAcc 1
+  where
+    facAcc acc 1 = acc
+    facAcc acc n = facAcc (acc*n) (n-1)
