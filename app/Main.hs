@@ -24,7 +24,7 @@ import Data.Vector ( Vector, generate, (!), modify,
     empty, cons, snoc, last,
     null, splitAt, init, length,
     sum, tail, filter, unfoldrExactN,
-    toList, (//))
+    toList, (//), head, elem)
 import Prelude hiding (map, sum, null, length, last,
     splitAt, init, tail, filter)
 import Criterion.Main
@@ -357,11 +357,11 @@ dealerHand21Lose =
     Data.Vector.filter
         (\u ->
         (==6) (length u) ||
-        elem u 
-            [
-                (pure Ace `snoc` TenJackQueenKing),
+        Data.Vector.elem u 
+            (
+                pure (pure Ace `snoc` TenJackQueenKing) `snoc`
                 (pure TenJackQueenKing `snoc` Ace)
-            ]
+            )
         )
         dealerHandList
 
@@ -444,8 +444,11 @@ standEVMap = fromSet calculateStandEV standEVSet
     calculateStandEV :: (Vector Card, Card) -> EV
     calculateStandEV boardPosition@(playerHand, dealerFaceUp)
         | length playerHand == 2,
-          playerHand `elem`
-          [pure Ace `snoc` TenJackQueenKing, pure TenJackQueenKing `snoc` Ace] =
+          playerHand `Data.Vector.elem`
+          (
+            pure (pure Ace `snoc` TenJackQueenKing) `snoc`
+            (pure TenJackQueenKing `snoc` Ace)
+          ) =
             2.5 -
             (
                 1.5 *
@@ -526,7 +529,45 @@ standEVMap = fromSet calculateStandEV standEVSet
         calculateIndividualDealerHandProbability boardPosition <$>
         dealerHands
 
+    --Note: It appears that I've forgotten to filter dealerhands based on the initial card.
+    --I'm doing this via calcuateIndividualDealerHandProbability as a holding pattern,
+    --with the expectation of later optimizing this away.
     calculateIndividualDealerHandProbability
         :: (Vector Card, Card) -> Vector Card -> EV
-    calculateIndividualDealerHandProbability boardPosition specificDealerHand =
-        1 --holding value so that benchmarks for the structure can be done.
+    calculateIndividualDealerHandProbability (playerCards,dealerFaceUp) specificDealerHand
+        | dealerFaceUp /= specificDealerHand Data.Vector.! 0 =
+            0
+        | otherwise =
+            go (playerCards `snoc` dealerFaceUp) (tail specificDealerHand) 1
+      where
+        go :: Vector Card -> Vector Card -> Double -> EV
+        go _ (Data.Vector.null -> True) storedProbability =
+            storedProbability
+        go cardsInPlay dealerHand@(Data.Vector.head -> TenJackQueenKing) storedProbability =
+            go (cardsInPlay `snoc` TenJackQueenKing) (tail dealerHand) (tensCalc cardsInPlay * storedProbability)
+        go cardsInPlay dealerHand storedProbability =
+            let other = Data.Vector.head dealerHand in
+            go (cardsInPlay `snoc` other) (tail dealerHand) (otherCalc cardsInPlay other * storedProbability)
+        
+        tensCalc :: Vector Card -> EV
+        tensCalc cardsInPlay =
+            fromIntegral
+            (128 -
+            
+            length ( Data.Vector.filter (==TenJackQueenKing) cardsInPlay)
+            
+            )
+            /
+            fromIntegral
+            (416 - length cardsInPlay )
+        
+        otherCalc :: Vector Card -> Card -> EV
+        otherCalc cardsInPlay card =
+            fromIntegral
+            (   
+                128 -
+                length ( Data.Vector.filter (==card) cardsInPlay)
+            )
+            /
+            fromIntegral
+            (416 - length cardsInPlay)
