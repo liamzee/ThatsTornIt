@@ -25,14 +25,14 @@ import Data.Vector ( Vector, generate, (!), modify,
     null, splitAt, init, length,
     sum, tail, filter, unfoldrExactN,
     toList, (//), head, elem)
-import Prelude hiding (map, sum, null, length, last,
+import Prelude hiding (head, map, sum, null, length, last,
     splitAt, init, tail, filter)
 import Criterion.Main
 import Control.DeepSeq ( NFData, force )
 import Control.Parallel.Strategies
 import Control.Monad ((<=<), (>=>), join)
-import Data.Map.Strict ( Map, fromSet )
-import Data.Set
+import Data.Map.Strict ( Map, fromSet, union )
+import Data.Set hiding (union)
 
 
 data Card
@@ -155,7 +155,10 @@ instance ToJSON Suggestion
 --the dealer hands list.
 
 main :: IO ()
-main = undefined
+main = do
+    print =<< getCurrentTime
+    writeFile "C:\\users\\liam\\desktop\\TTITest.txt" $ show standEVMap
+    print =<< getCurrentTime
 
 
 -- | list of all ranks in Vector form used for combination creation.
@@ -415,8 +418,32 @@ dealerHand20 =
 
 
 standEVMap :: Map (Vector Card, Card) EV
-standEVMap = fromSet calculateStandEV standEVSet
+standEVMap = parallelize
   where
+    parallelize :: Map (Vector Card, Card) EV
+    parallelize = runEval $ do
+        let (set1, set2) = Data.Set.splitAt (div (size standEVSet) 2) standEVSet
+        let (set11, set12) = Data.Set.splitAt (div (size set1) 2) set1
+        let (set21, set22) = Data.Set.splitAt (div (size set2) 2) set2
+        let (set111, set112) = Data.Set.splitAt (div (size set11) 2) set11
+        let (set121, set122) = Data.Set.splitAt (div (size set12) 2) set12
+        let (set211, set212) = Data.Set.splitAt (div (size set21) 2) set21
+        let (set221, set222) = Data.Set.splitAt (div (size set22) 2) set22
+
+        map111 <- rpar $ force $ fromSet calculateStandEV set111
+        map112 <- rpar $ force $ fromSet calculateStandEV set112
+        map121 <- rpar $ force $ fromSet calculateStandEV set121
+        map122 <- rpar $ force $ fromSet calculateStandEV set122
+        map211 <- rpar $ force $ fromSet calculateStandEV set211
+        map212 <- rpar $ force $ fromSet calculateStandEV set212
+        map221 <- rpar $ force $ fromSet calculateStandEV set221
+        map222 <- rpar $ force $ fromSet calculateStandEV set222
+        
+        rseq map111 >> rseq map112 >> rseq map121 >> rseq map122
+        rseq map211 >> rseq map212 >> rseq map221 >> rseq map222
+        pure $ ((union map111 map112) `union` (union map121 map122)) `union` ((union map211 map212) `union` (union map221 map222))
+        
+    
     standEVSet :: Set (Vector Card, Card)
     standEVSet = gameStateList
 
@@ -440,6 +467,7 @@ standEVMap = fromSet calculateStandEV standEVSet
     --
     --We cannot lose with a natural, so
     --2.5 - 1.5 * probabilityOfTie
+    --in the event of a natural.
 
     calculateStandEV :: (Vector Card, Card) -> EV
     calculateStandEV boardPosition@(playerHand, dealerFaceUp)
@@ -524,10 +552,11 @@ standEVMap = fromSet calculateStandEV standEVSet
 
     calculateProbabilityFromDealerHands
         :: (Vector Card, Card) -> Vector (Vector Card) -> EV
-    calculateProbabilityFromDealerHands boardPosition dealerHands =
+    calculateProbabilityFromDealerHands
+        boardPosition@(playerHand, dealerFaceUp) dealerHands =
         sum $
         calculateIndividualDealerHandProbability boardPosition <$>
-        dealerHands
+        Data.Vector.filter ((== dealerFaceUp) . head) dealerHands
 
     --Note: It appears that I've forgotten to filter dealerhands based on the initial card.
     --I'm doing this via calcuateIndividualDealerHandProbability as a holding pattern,
