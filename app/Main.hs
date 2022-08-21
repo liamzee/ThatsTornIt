@@ -1,5 +1,6 @@
-{-# LANGUAGE OverloadedLists, OverloadedStrings, LambdaCase #-}
-{-# LANGUAGE DeriveGeneric, DeriveAnyClass, ViewPatterns #-}
+{-# LANGUAGE OverloadedStrings, LambdaCase, MonadComprehensions #-}
+{-# LANGUAGE DeriveGeneric, DeriveAnyClass #-}
+{-# LANGUAGE ViewPatterns #-}
 
 {-This file, at least for now, is going to be done as a single module.
 Comments like these will split up the parts of the module, it's not good
@@ -7,7 +8,7 @@ design, but I've lost my confidence in the inliner.
 
 The existence of shared functions also makes it somewhat harder
 to understand the organization of program, which probably
-led to substantial bugs with the previous iteration.-}
+led to substantial bugs with previous iterations.-}
 
 module Main where
 
@@ -22,13 +23,16 @@ import Data.Vector.Generic.Mutable (write)
 import Data.Vector ( Vector, generate, (!), modify,
     empty, cons, snoc, last,
     null, splitAt, init, length,
-    sum, tail, filter, unfoldrExactN)
-import Prelude hiding (sum, null, length, last,
+    sum, tail, filter, unfoldrExactN,
+    toList, (//))
+import Prelude hiding (map, sum, null, length, last,
     splitAt, init, tail, filter)
 import Criterion.Main
-import Control.DeepSeq
+import Control.DeepSeq ( NFData, force )
 import Control.Parallel.Strategies
-import Control.Monad ((<=<), (>=>))
+import Control.Monad ((<=<), (>=>), join)
+import Data.Map.Strict ( Map, fromSet )
+import Data.Set
 
 
 data Card
@@ -146,93 +150,47 @@ newtype Suggestion
 instance FromJSON Suggestion
 instance ToJSON Suggestion
 
+--Rebuilt around 3 main memoizations, namely the
+--standEV list, the player hands list, and
+--the dealer hands list.
 
--- the Main, which only runs time benchmarking and calls
--- runOutputter
-
-main :: IO()
-main = runOutputter
-
-{-
-    print =<< getCurrentTime
-    runOutputter
-    print =<< getCurrentTime
--}
-
--- The outputter
-
-{-
-getFilePath :: IO String
-getFilePath = sanitize <$> saveFileDialog "" "" [""] ""
--}
-
-getFilePath :: IO String
-getFilePath = pure "C:\\Users\\Liam\\Desktop\\crapjson.json"
-
-sanitize :: Maybe Text -> String
-sanitize =
-    unpack .
-    fromMaybe
-    (
-        error "could not get filePath, perhaps you canceled the prompt?"
-    )
+main :: IO ()
+main = undefined
 
 
-runOutputter :: IO ()
-runOutputter = do
-    filePath <- getFilePath
-    let encodedJSON = getEncodedJSON
-    LB.writeFile filePath encodedJSON
+-- | list of all ranks in Vector form used for combination creation.
+
+twoToAce :: Vector Card
+twoToAce =
+    pure Two `snoc`
+    Three `snoc`
+    Four `snoc`
+    Five `snoc`
+    Six `snoc`
+    Seven `snoc`
+    Eight `snoc`
+    Nine `snoc`
+    TenJackQueenKing `snoc`
+    Ace
 
 
-getEncodedJSON :: LB.ByteString
-getEncodedJSON = encode assembledPreJSON
-
-
-assembledPreJSON :: BlackjackActionDirectoryTopLevel
-assembledPreJSON = BlackjackActionDirectoryTopLevel makeMainBranches
-
--- Around this point, we begin trying to generate all player hands.
-
-
-dupe :: a -> ( a , a )
-dupe input = ( input , input )
-
-
-makeMainBranches :: Vector ( GameState , BranchContents )
-makeMainBranches =
-    cons (firstGameState, deriveBranchContents firstGameState) $ unfoldrExactN 549 (dupe.processGameState) (firstGameState, deriveBranchContents firstGameState)
-
+gameStateList :: Set (Vector Card, Card)
+gameStateList =
+    appendToLengthNGameState 4 $
+    appendToLengthNGameState 3 $
+    appendToLengthNGameState 2 $
+    allPairsAndDealerFaceUps
   where
-
-    go :: Int -> ( GameState , BranchContents )
-    go n = iterate processGameState (firstGameState , deriveBranchContents firstGameState) !! n
-
-    firstGameState :: GameState
-    firstGameState =
-        GameState
-        (
-            generate 2 (const Two) ,
-            Two
-        )
-
-    processGameState ::
-        ( GameState , BranchContents )
-        ->
-        ( GameState , BranchContents )
-    processGameState ( gameState , _ ) =
-        (
-            createNewGameState gameState ,
-            deriveBranchContents ( createNewGameState gameState )
-        )
-
-    createNewGameState :: GameState -> GameState
-    createNewGameState (GameState contents) =
-        GameState $ addOneToContentsTwoCards contents
+    allPairsAndDealerFaceUps :: Set (Vector Card, Card)
+    allPairsAndDealerFaceUps =
+        fromAscList . Data.Vector.toList $
+        (generate 2 (const Two) , Two) `cons`
+        unfoldrExactN 549(dupe.addOneToContentsTwoCards)
+        (generate 2 (const Two) , Two)
 
     addOneToContentsTwoCards :: ( Vector Card , Card ) -> ( Vector Card , Card )
     addOneToContentsTwoCards ( vector , dealerFaceUp ) =
-        case ( vector!0 , vector!1 ) of
+        case ( vector Data.Vector.! 0 ,  vector Data.Vector.! 1 ) of
             ( Ace , Ace ) ->
                 (
                     generate 2 ( const Two ) ,
@@ -259,6 +217,28 @@ makeMainBranches =
                     dealerFaceUp
                 )
 
+    appendToLengthNGameState
+        :: Int
+        -> Set (Vector Card, Card)
+        -> Set (Vector Card, Card)
+    appendToLengthNGameState givenLength setOfGameStates =
+        unions $ map (go givenLength) setOfGameStates
+      where
+        go :: Int -> (Vector Card, Card) -> Set (Vector Card, Card)
+        go givenLength (vectorCard, card)
+            | givenLength > length vectorCard =
+                singleton (vectorCard, card)
+            | otherwise =
+                fromList . Data.Vector.toList $
+                cons (vectorCard , card) $
+                    do
+                        newCard <- Data.Vector.filter
+                            (>= last vectorCard) twoToAce
+                        if 21 < cardsValueOf (vectorCard `snoc` newCard)
+                            then Data.Vector.empty
+                            else pure (vectorCard `snoc` newCard , card)
+
+
 
 incrementCardAceUnsafe :: Card -> Card
 incrementCardAceUnsafe = \case
@@ -272,467 +252,281 @@ incrementCardAceUnsafe = \case
     Nine -> TenJackQueenKing
     TenJackQueenKing -> Ace
 
--- Now we see the first conditional player hand generation.
 
-twoToAce :: Vector Card
-twoToAce =
-    pure Two `snoc`
-    Three `snoc`
-    Four `snoc`
-    Five `snoc`
-    Six `snoc`
-    Seven `snoc`
-    Eight `snoc`
-    Nine `snoc`
-    TenJackQueenKing `snoc`
-    Ace
+cardsValueOf :: Vector Card -> Int
+cardsValueOf cardVector =
+    cardsValueInner cardVector 0 0
 
-
-deriveBranchContents :: GameState -> BranchContents
-deriveBranchContents seedState =
-    let newestCard :: GameState -> Card
-        newestCard = last . fst . gameState in
-    BranchContents $ parallelAppendTo4 . parallelAppendTo3 $ appendTo2 ( seedState , AnnotatedSuggestions $ makeAnnotatedSuggestions $ gameState seedState )
-        where
-            parallelAppendTo3 :: Vector (GameState, AnnotatedSuggestions) -> Vector (GameState, AnnotatedSuggestions)
-            parallelAppendTo3 input =
-                runEval $ do
-                    let (splitTop1,splitTop2) = splitAt (length input `div` 2) input
-                    let (splitTop11,splitTop12) = splitAt (length splitTop1 `div` 2) splitTop1
-                    let (splitTop21,splitTop22) = splitAt (length splitTop2 `div` 2) splitTop2
-                    let (splitTop111,splitTop112) = splitAt (length splitTop11 `div` 2) splitTop11
-                    let (splitTop121,splitTop122) = splitAt (length splitTop12 `div` 2) splitTop12
-                    let (splitTop211,splitTop212) = splitAt (length splitTop21 `div` 2) splitTop21
-                    let (splitTop221,splitTop222) = splitAt (length splitTop22 `div` 2) splitTop22
-
-                    processedSplitTop111 <- rpar (force $ appendTo3 =<< splitTop111 )
-                    processedSplitTop112 <- rpar (force $ appendTo3 =<< splitTop112 )
-                    processedSplitTop121 <- rpar (force $ appendTo3 =<< splitTop121 )
-                    processedSplitTop122 <- rpar (force $ appendTo3 =<< splitTop122 )
-                    processedSplitTop211 <- rpar (force $ appendTo3 =<< splitTop211 )
-                    processedSplitTop212 <- rpar (force $ appendTo3 =<< splitTop212 )
-                    processedSplitTop221 <- rpar (force $ appendTo3 =<< splitTop221 )
-                    processedSplitTop222 <- rpar (force $ appendTo3 =<< splitTop222 )
-
-                    rseq processedSplitTop111 >> rseq processedSplitTop112 >> rseq processedSplitTop121 >> rseq processedSplitTop122
-                    rseq processedSplitTop211 >> rseq processedSplitTop212 >> rseq processedSplitTop221 >> rseq processedSplitTop222
-
-                    pure (processedSplitTop111 <> processedSplitTop112 <> processedSplitTop121 <> processedSplitTop122
-                        <> processedSplitTop211 <> processedSplitTop212 <> processedSplitTop221 <> processedSplitTop222)
-
-            parallelAppendTo4 :: Vector (GameState, AnnotatedSuggestions) -> Vector (GameState, AnnotatedSuggestions)
-            parallelAppendTo4 input =
-                runEval $ do
-                    let (splitTop1,splitTop2) = splitAt (length input `div` 2) input
-                    let (splitTop11,splitTop12) = splitAt (length splitTop1 `div` 2) splitTop1
-                    let (splitTop21,splitTop22) = splitAt (length splitTop2 `div` 2) splitTop2
-                    let (splitTop111,splitTop112) = splitAt (length splitTop11 `div` 2) splitTop11
-                    let (splitTop121,splitTop122) = splitAt (length splitTop12 `div` 2) splitTop12
-                    let (splitTop211,splitTop212) = splitAt (length splitTop21 `div` 2) splitTop21
-                    let (splitTop221,splitTop222) = splitAt (length splitTop22 `div` 2) splitTop22
-
-                    processedSplitTop111 <- rpar (force $ appendTo4 =<< splitTop111 )
-                    processedSplitTop112 <- rpar (force $ appendTo4 =<< splitTop112 )
-                    processedSplitTop121 <- rpar (force $ appendTo4 =<< splitTop121 )
-                    processedSplitTop122 <- rpar (force $ appendTo4 =<< splitTop122 )
-                    processedSplitTop211 <- rpar (force $ appendTo4 =<< splitTop211 )
-                    processedSplitTop212 <- rpar (force $ appendTo4 =<< splitTop212 )
-                    processedSplitTop221 <- rpar (force $ appendTo4 =<< splitTop221 )
-                    processedSplitTop222 <- rpar (force $ appendTo4 =<< splitTop222 )
-
-                    rseq processedSplitTop111 >> rseq processedSplitTop112 >> rseq processedSplitTop121 >> rseq processedSplitTop122
-                    rseq processedSplitTop211 >> rseq processedSplitTop212 >> rseq processedSplitTop221 >> rseq processedSplitTop222
-
-                    pure (processedSplitTop111 <> processedSplitTop112 <> processedSplitTop121 <> processedSplitTop122
-                        <> processedSplitTop211 <> processedSplitTop212 <> processedSplitTop221 <> processedSplitTop222)
-
-            appendTo2 :: (GameState, AnnotatedSuggestions) -> Vector (GameState, AnnotatedSuggestions)
-            appendTo2 target = cons target $
-                        do
-                        newCard <- twoToAce
-                        let newHand = snoc (fst $ gameState . fst $ target ) newCard
-                        let dealerCard = snd $ gameState seedState
-                        if newCard < (last . fst . gameState . fst $ target) || 21 < convertToValue (fst . gameState . fst $ target, newCard)
-                        then empty
-                        else do
-                            let newGameState = GameState (newHand , dealerCard)
-                            pure ( newGameState , AnnotatedSuggestions . makeAnnotatedSuggestions . gameState $ newGameState )
-
-            appendTo3 :: (GameState, AnnotatedSuggestions) -> Vector (GameState, AnnotatedSuggestions)
-            appendTo3 test@(length . fst . gameState . fst -> 2) = pure test
-            appendTo3 target = cons target $
-                        do
-                        newCard <- twoToAce
-                        let newHand = snoc (fst $ gameState . fst $ target ) newCard
-                        let dealerCard = snd $ gameState seedState
-                        if newCard < (last . fst . gameState . fst $ target) || 21 < convertToValue (fst . gameState . fst $ target, newCard)
-                        then empty
-                        else do
-                            let newGameState = GameState (newHand , dealerCard)
-                            pure ( newGameState , AnnotatedSuggestions . makeAnnotatedSuggestions . gameState $ newGameState )
-
-            appendTo4 :: (GameState, AnnotatedSuggestions) -> Vector (GameState, AnnotatedSuggestions)
-            appendTo4 test@( (3 >= ) . length . fst . gameState . fst -> True ) = pure test
-            appendTo4 target = cons target $
-                        do
-                        newCard <- twoToAce
-                        let newHand = snoc (fst $ gameState . fst $ target ) newCard
-                        let dealerCard = snd $ gameState seedState
-                        if newCard < (last . fst . gameState . fst $ target) || 21 < convertToValue (fst . gameState . fst $ target, newCard)
-                        then empty
-                        else do
-                            let newGameState = GameState (newHand , dealerCard)
-                            pure ( newGameState , AnnotatedSuggestions . makeAnnotatedSuggestions . gameState $ newGameState )
-
-
-convertToValue :: ( PlayerCards , Card ) -> Int
-convertToValue (playerCards,card)=
-    go (snoc playerCards card) 0 0
-  where
-    go inputVector aces value
-        | null inputVector =
-            case True of
-                _ | 21 >= aces * 11 + value ->
-                    aces * 11 + value
-                _ | 0 == aces ->
-                    value
-                _ ->
-                    go empty (aces-1) (value+1)
+cardsValueInner :: Vector Card -> Int -> Int -> Int
+cardsValueInner (Data.Vector.null -> True) aces otherValue
+        | aces + otherValue > 21 =
+            aces + otherValue
+        | aces * 11 + otherValue > 21 =
+            cardsValueInner Data.Vector.empty (aces-1) (otherValue+1)
         | otherwise =
-            case last inputVector of
-                Two ->
-                    go (init inputVector) aces (value+2)
-                Three ->
-                    go (init inputVector) aces (value+3)
-                Four ->
-                    go (init inputVector) aces (value+4)
-                Five ->
-                    go (init inputVector) aces (value+5)
-                Six ->
-                    go (init inputVector) aces (value+6)
-                Seven ->
-                    go (init inputVector) aces (value+7)
-                Eight ->
-                    go (init inputVector) aces (value+8)
-                Nine ->
-                    go (init inputVector) aces (value+9)
-                TenJackQueenKing ->
-                    go (init inputVector) aces (value+10)
-                Ace ->
-                    go (init inputVector) (aces+1) value
-
---At this point, we have the player hands ready, and we are now going to build the infrastructure that presents the player actions and outcomes.
-
-makeAnnotatedSuggestions :: (PlayerCards, DealerFaceUp) -> Vector (AllowedActions, Suggestion, Probability)
-makeAnnotatedSuggestions input@(playerCards, dealerFaceUp) =
-    case length playerCards of
-        2
-            | playerCards!0 == playerCards!1 ->
-                pure
-                (
-                    ActionsSplitSurrenderDouble
-                    ,
-                    Suggestion $
-                    makeSuggestion ActionsSplitSurrenderDouble $
-                    GameState input
-                    ,
-                    ()
-                )
-                <>
-                pure
-                (
-                    ActionsSurrenderDouble
-                    ,
-                    Suggestion $
-                    makeSuggestion ActionsSurrenderDouble $
-                    GameState input
-                    ,
-                    ()
-                )
-                <>
-                pure
-                (
-                    ActionsDouble
-                    ,
-                    Suggestion $
-                    makeSuggestion ActionsDouble $
-                    GameState input
-                    ,
-                    ()
-                )
-                <>
-                pure
-                (
-                    HitStandOnly
-                    ,
-                    Suggestion $
-                    makeSuggestion HitStandOnly $
-                    GameState input
-                    ,
-                    ()
-                )
-            | otherwise ->
-                pure
-                (
-                    ActionsSurrenderDouble
-                    ,
-                    Suggestion $
-                    makeSuggestion ActionsSurrenderDouble $
-                    GameState input
-                    ,
-                    ()
-                )
-                <>
-                pure
-                (
-                    ActionsDouble
-                    ,
-                    Suggestion $
-                    makeSuggestion ActionsDouble $
-                    GameState input
-                    ,
-                    ()
-                )
-                <>
-                pure
-                (
-                    HitStandOnly
-                    ,
-                    Suggestion $
-                    makeSuggestion HitStandOnly $
-                    GameState input,
-                    ()
-                )
-        _ ->
-            pure
-            (
-                HitStandOnly
-                ,
-                Suggestion $
-                makeSuggestion HitStandOnly $
-                GameState input
-                ,
-                ()
-            )
-
--- Now we actually calculate the suggestions.
-
--- | filter elements to consider allowedActions
-
-makeSuggestion :: AllowedActions -> GameState -> (EV, Action)
-makeSuggestion allowedActions (GameState gameState) =
-    case allowedActions of
-        ActionsSplitSurrenderDouble ->
-            maximum
-            (
-                pure (doubleAction gameState) `snoc`
-                splitAction gameState `snoc`
-                surrender `snoc`
-                hitOrStand gameState
-            )
-        ActionsSurrenderDouble ->
-            maximum
-            (
-                pure (doubleAction gameState) `snoc`
-                surrender `snoc`
-                hitOrStand gameState
-            )
-        ActionsDouble ->
-            maximum
-            (
-                pure (doubleAction gameState) `snoc`
-                hitOrStand gameState
-            )
-        HitStandOnly ->
-            hitOrStand gameState
-
-        where
-            surrender = ( 0.5 , Surrender )
+            aces * 11 + otherValue
+cardsValueInner cards aces otherValue =
+        case last cards of
+            Ace ->
+                cardsValueInner (init cards) ( aces + 1 ) otherValue
+            _ ->
+                cardsValueInner (init cards) aces $
+                (otherValue +) $
+                case last cards of
+                    Two -> 2
+                    Three -> 3
+                    Four -> 4
+                    Five -> 5
+                    Six -> 6
+                    Seven -> 7
+                    Eight -> 8
+                    Nine -> 9
+                    TenJackQueenKing -> 10
 
 
-doubleAction :: (PlayerCards, DealerFaceUp) -> (EV, Action)
-doubleAction input = (0,Stand) --error i just want to get this to compile
+dupe :: a -> ( a , a )
+dupe input = ( input , input )
+            
 
-
-splitAction :: (PlayerCards, DealerFaceUp) -> (EV, Action)
-splitAction input = (0,Stand) --error I just want to get this to compile)
-
-
-hitOrStand :: (PlayerCards, DealerFaceUp) -> (EV, Action)
-hitOrStand boardState = max (calculateStandEV boardState, Stand) (calculateHitEV boardState, Hit)
-
---Stand EV is the root of all player actions, if we assign "bust" or "losing" a value of 0,
---we don't need to calculate the odds of such, and when we do need bust / loss probability
---we can simply subtract.
-
-calculateHitEV :: (PlayerCards, DealerFaceUp) -> EV
-calculateHitEV input@(playerCards, dealerFaceUp) =
-    maximum (probabilityOfPlayerDrawOnStandEV <$> appendPlayerCard input) --this is a mess.
-
-
-probabilityOfPlayerDrawOnStandEV :: (PlayerCards, DealerFaceUp) -> EV
-probabilityOfPlayerDrawOnStandEV boardState@(playerCards, dealerFaceUp) =
-    let cardsAlreadyDrawn = playerCards `snoc` dealerFaceUp in
-    calculateStandEV boardState *
-    (
-        fromIntegral
-        (
-            16 -
-            length
-            (filter (== last playerCards) $ init cardsAlreadyDrawn)
-        )
-        /
-        fromIntegral
-        (
-            416 +
-            1 -
-            length cardsAlreadyDrawn
-        )
-    )
-    
-
-
-appendPlayerCard :: (PlayerCards, DealerFaceUp) -> Vector (PlayerCards, DealerFaceUp)
-appendPlayerCard (playerCards, dealerFaceUp) =
-    do
-        newCard <- twoToAce
-        if 21 < convertToValueHand (playerCards `snoc` newCard)
-            then empty
-            else pure (playerCards `snoc` newCard, dealerFaceUp)
-
-
-calculateStandEV :: (PlayerCards, DealerFaceUp) -> EV
-calculateStandEV boardState@(playerCards, dealerFaceUp) =
-    case playerCards of
-        cards 
-            | elem cards $
-            pure (pure Ace `snoc` TenJackQueenKing) `snoc`
-            (pure TenJackQueenKing `snoc` Ace) ->
-                undefined
-            | length cards == 6 ->
-                undefined
-            | 21 == convertToValueHand cards ->
-                undefined
-            | otherwise ->
-                undefined
-
-
-convertToValueHand :: Vector Card -> Int
-convertToValueHand dealerCards =
-    go dealerCards 0 0
+dealerHandList :: Vector (Vector Card) --outstanding problem: 
+dealerHandList =
+    appendDealerCards $
+    appendDealerCards $
+    appendDealerCards $
+    appendDealerCards $
+    allPairs
   where
-    go inputVector aces value
-        | null inputVector =
-            case True of
-                _ | 21 >= aces * 11 + value ->
-                    aces * 11 + value
-                _ | 0 == aces ->
-                    value
-                _ ->
-                    go empty (aces-1) (value+1)
+    allPairs :: Vector (Vector Card)
+    allPairs = 
+        generate 2 (const Two) `cons`
+        unfoldrExactN 99 (dupe . addOneToContentsTwoCardsDealer)
+        (generate 2 (const Two))
+
+    addOneToContentsTwoCardsDealer :: Vector Card -> Vector Card
+    addOneToContentsTwoCardsDealer vectorCard =
+        case ( vectorCard Data.Vector.! 0 ,  vectorCard Data.Vector.! 1 ) of
+            ( notAce , Ace ) ->
+                modify
+                (
+                    \u -> do
+                        write u 0 $ incrementCardAceUnsafe notAce
+                        write u 1 $ Two
+                )
+                vectorCard
+            ( _ , secondElement ) ->
+                modify
+                (\u -> write u 1 $ incrementCardAceUnsafe secondElement)
+                vectorCard
+
+    appendDealerCards :: Vector (Vector Card) -> Vector (Vector Card)
+    appendDealerCards input =
+        do
+            oldVector <- input
+            if 17 <= cardsValueOf oldVector
+                then pure oldVector
+                else do
+                    newCard <- twoToAce
+                    if 21 < cardsValueOf (snoc oldVector newCard)
+                        then Data.Vector.empty
+                        else pure $ snoc oldVector newCard
+
+
+dealerHandSix :: Vector (Vector Card)
+dealerHandSix =
+    Data.Vector.filter ((== 6). length) dealerHandList
+
+dealerHandNotSix :: Vector (Vector Card)
+dealerHandNotSix =
+    Data.Vector.filter ((/= 6). length) dealerHandList
+
+
+dealerHand21WithoutNatural :: Vector (Vector Card)
+dealerHand21WithoutNatural =
+    Data.Vector.filter (flip notElem dealerHandNatural) $
+    Data.Vector.filter ( (==21) . cardsValueOf ) dealerHandNotSix
+                                                 
+
+dealerHandNatural :: Vector (Vector Card)
+dealerHandNatural =
+    pure (pure Ace `snoc` TenJackQueenKing) `snoc`
+    (pure TenJackQueenKing `snoc` Ace)
+
+
+dealerHand21Lose :: Vector (Vector Card)
+dealerHand21Lose =
+    Data.Vector.filter
+        (\u ->
+        (==6) (length u) ||
+        elem u 
+            [
+                (pure Ace `snoc` TenJackQueenKing),
+                (pure TenJackQueenKing `snoc` Ace)
+            ]
+        )
+        dealerHandList
+
+
+dealerHand20Lose :: Vector (Vector Card)
+dealerHand20Lose =
+    Data.Vector.filter
+        (\u -> (==6) (length u)  || 21 >= cardsValueOf u)
+        dealerHandList
+
+
+dealerHand19Lose :: Vector (Vector Card)
+dealerHand19Lose =
+    Data.Vector.filter
+        (\u -> (==6) (length u)  || 20 >= cardsValueOf u)
+        dealerHandList
+
+
+dealerHand18Lose :: Vector (Vector Card)
+dealerHand18Lose =
+    Data.Vector.filter
+        (\u -> (==6) (length u)  || 19 >= cardsValueOf u)
+        dealerHandList
+
+
+dealerHand17Lose :: Vector (Vector Card)
+dealerHand17Lose =
+    Data.Vector.filter
+        (\u -> (==6) (length u)  || 18 >= cardsValueOf u)
+        dealerHandList
+
+
+dealerHand17 :: Vector (Vector Card)
+dealerHand17 =
+    Data.Vector.filter ( (==17) . cardsValueOf ) dealerHandNotSix
+
+
+dealerHand18 :: Vector (Vector Card)
+dealerHand18 =
+    Data.Vector.filter ( (==18) . cardsValueOf ) dealerHandNotSix
+
+
+dealerHand19 :: Vector (Vector Card)
+dealerHand19 =
+    Data.Vector.filter ( (==19) . cardsValueOf ) dealerHandNotSix
+
+
+dealerHand20 :: Vector (Vector Card)
+dealerHand20 =
+    Data.Vector.filter ( (==20) . cardsValueOf ) dealerHandNotSix
+
+
+standEVMap :: Map (Vector Card, Card) EV
+standEVMap = fromSet calculateStandEV standEVSet
+  where
+    standEVSet :: Set (Vector Card, Card)
+    standEVSet = gameStateList
+
+
+    --Just working it out, the EV of a stand action should be:
+    --
+    --probabilityOfTie * tieValue + probabilityOfLoss * lossValue +
+    --probabilityOfWin * winValue
+    --
+    --probabilityOfWin = 1 - probabilityOfTie - probabilityOfLoss
+    --
+    --then we can simplify to, by setting lossValue to 0, allowing us to ignore
+    --it, tieValue to 1, and winValue to 2
+    --
+    --probabilityOfTie + (1 - probabilityOfTie - probabilityOfLoss) * 2
+    --
+    --2 - (2 * probabilityOfLoss) - probabilityOfTie
+    --
+    --In the natural case, we have 2.5 - 2.5 * probabilityOfLoss
+    -- - 2.5 * probabilityOfTie  + 1 probabilityOfTie
+    --
+    --We cannot lose with a natural, so
+    --2.5 - 1.5 * probabilityOfTie
+
+    calculateStandEV :: (Vector Card, Card) -> EV
+    calculateStandEV boardPosition@(playerHand, dealerFaceUp)
+        | length playerHand == 2,
+          playerHand `elem`
+          [pure Ace `snoc` TenJackQueenKing, pure TenJackQueenKing `snoc` Ace] =
+            2.5 -
+            (
+                1.5 *
+                calculateProbabilityFromDealerHands boardPosition
+                dealerHandNatural
+            )
+        | length playerHand == 6,
+          playerHandValue <- cardsValueOf playerHand =
+            twoWinMinus2LossMinusTie boardPosition
+                (
+                    dealerHandNatural <>
+                    Data.Vector.filter
+                    (
+                        ( playerHandValue < ) .
+                        cardsValueOf
+                    )
+                    dealerHandSix
+                )
+                (
+                Data.Vector.filter
+                (
+                    ( playerHandValue == ) .
+                    cardsValueOf
+                )
+                dealerHandSix
+                )
+        | cardsValueOf playerHand == 21 =
+            twoWinMinus2LossMinusTie boardPosition
+                dealerHand21Lose
+                dealerHand21WithoutNatural
+        | cardsValueOf playerHand == 20 =
+            twoWinMinus2LossMinusTie boardPosition
+                dealerHand20Lose
+                dealerHand20
+        | cardsValueOf playerHand == 19 =
+            twoWinMinus2LossMinusTie boardPosition
+                dealerHand19Lose
+                dealerHand19
+        | cardsValueOf playerHand == 18 =
+            twoWinMinus2LossMinusTie boardPosition
+                dealerHand18Lose
+                dealerHand18
+        | cardsValueOf playerHand == 17 =
+            twoWinMinus2LossMinusTie boardPosition
+                dealerHand17Lose
+                dealerHand17
         | otherwise =
-            case last inputVector of
-                Two ->
-                    go (init inputVector) aces (value+2)
-                Three ->
-                    go (init inputVector) aces (value+3)
-                Four ->
-                    go (init inputVector) aces (value+4)
-                Five ->
-                    go (init inputVector) aces (value+5)
-                Six ->
-                    go (init inputVector) aces (value+6)
-                Seven ->
-                    go (init inputVector) aces (value+7)
-                Eight ->
-                    go (init inputVector) aces (value+8)
-                Nine ->
-                    go (init inputVector) aces (value+9)
-                TenJackQueenKing ->
-                    go (init inputVector) aces (value+10)
-                Ace ->
-                    go (init inputVector) (aces+1) value
-
-
-appendCardDealer :: Card -> Vector DealerHand
-appendCardDealer dealerFaceUp =
-    appendCard =<<
-    appendCard =<<
-    appendCard =<<
-    appendCard =<< basicHand dealerFaceUp
-  where
-    basicHand :: Card -> Vector DealerHand
-    basicHand dealerFaceUp =
-        snoc (pure dealerFaceUp) <$> twoToAce
-    appendCard :: DealerHand -> Vector DealerHand
-    appendCard hand =
-        if 17 <= convertToValueHand hand
-            then pure hand
-            else do
-                newCard <- twoToAce
-                if 21 < convertToValueHand (snoc (pure dealerFaceUp) newCard) ||
-                    newCard < last hand
-                    then empty
-                    else pure $ snoc hand newCard
-
-
-calculateEV :: (PlayerCards, Card) -> DealerHand -> EV
-calculateEV (uncurry snoc -> cardsInPlay) dealerHand =
-    calculateProbability cardsInPlay (tail dealerHand) 1 *
-    numberOfPermutationsDealerHand (tail dealerHand)
-  where
-    calculateProbability :: Vector Card -> DealerHand -> Double -> EV
-    calculateProbability cardsInPlay (null -> True) storedValue = storedValue
-    calculateProbability cardsInPlay dealerHand storedValue =
-        case dealerHand!0 of
-            TenJackQueenKing ->
-                calculateProbability
-                (cardsInPlay `snoc` (dealerHand!0))
-                (tail dealerHand) $
+            twoWinMinus2LossMinusTie boardPosition
+                dealerHandList
+                Data.Vector.empty
+      where
+        twoWinMinus2LossMinusTie
+            :: (Vector Card, Card)
+            -> Vector (Vector Card)
+            -> Vector (Vector Card)
+            -> EV
+        twoWinMinus2LossMinusTie boardPosition lossPositions tiePositions =
+            2 -
+            (
+                2 *
                 (
-                    128 -
-                    fromIntegral
-                    (
-                        length $
-                        filter (==TenJackQueenKing) cardsInPlay
-                    )
-                    /
-                    416 - fromIntegral (length cardsInPlay)
-                ) * storedValue
-            other ->
-                calculateProbability
-                (cardsInPlay `snoc` (dealerHand!0))
-                (tail dealerHand) $
-                (
-                    32 -
-                    fromIntegral
-                    (
-                        length $
-                        filter (==other) cardsInPlay
-                    )
-                    /
-                    416 - fromIntegral (length cardsInPlay)
-                ) * storedValue
-
-    numberOfPermutationsDealerHand :: Vector Card -> Double
-    numberOfPermutationsDealerHand dealerHand =
-        let lengthOfHand = length dealerHand
-            numberOfSingles = 0 --should be undefined
-            numberOfDoubles = 0 --should be undefined
-            aceCase = 0 in --should be undefinedin
-        fromIntegral $
-                fac lengthOfHand -
-                (
-                    numberOfSingles *
-                    fac (lengthOfHand - 1) +
-                    numberOfDoubles *
-                    fac (lengthOfHand - 2) +
-                    aceCase
+                    calculateProbabilityFromDealerHands
+                        boardPosition
+                        lossPositions
                 )
-         -- needs revision, this is a placeholder to get this to compile
+            )
+            -
+            (
+                calculateProbabilityFromDealerHands
+                    boardPosition
+                    tiePositions
+            )
 
-fac :: Int -> Int
-fac = facAcc 1
-  where
-    facAcc acc 1 = acc
-    facAcc acc n = facAcc (acc*n) (n-1)
+    calculateProbabilityFromDealerHands
+        :: (Vector Card, Card) -> Vector (Vector Card) -> EV
+    calculateProbabilityFromDealerHands boardPosition dealerHands =
+        sum $
+        calculateIndividualDealerHandProbability boardPosition <$>
+        dealerHands
+
+    calculateIndividualDealerHandProbability
+        :: (Vector Card, Card) -> Vector Card -> EV
+    calculateIndividualDealerHandProbability boardPosition specificDealerHand =
+        1 --holding value so that benchmarks for the structure can be done.
