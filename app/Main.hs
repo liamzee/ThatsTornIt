@@ -10,6 +10,12 @@ The existence of shared functions also makes it somewhat harder
 to understand the organization of program, which probably
 led to substantial bugs with previous iterations.-}
 
+{-
+    So far, there are a few key painpoints that need to be verified.
+    First, are the various probability calculators correct?
+    Second, are the generators for cards correct?
+-}
+
 module Main where
 
 import Data.Time (getCurrentTime)
@@ -163,7 +169,9 @@ instance ToJSON Suggestion
 main :: IO ()
 main = do
     print =<< getCurrentTime
-    print $ gEye
+    print checkEVofGame
+    tfd <- saveFileDialog "" "" [""] "" >>= pure . unpack . fromMaybe ""
+    writeJSONOutput tfd
     --writeFile "C:\\users\\liam\\desktop\\TTITest.txt" $ show standEVMap
     print =<< getCurrentTime
 
@@ -498,9 +506,8 @@ standEVMap = parallelize
     calculateStandEV boardPosition@(playerHand, dealerFaceUp)
         | length playerHand == 2,
           playerHand `Data.Vector.elem`
-          (
-            [[TenJackQueenKing,Ace],[Ace,TenJackQueenKing]]
-          ) =
+          [[TenJackQueenKing,Ace],[Ace,TenJackQueenKing]]
+           =
             2.5 -
             (
                 1.5 *
@@ -564,18 +571,16 @@ standEVMap = parallelize
             2 -
             (
                 2 *
-                (
-                    calculateProbabilityFromDealerHands
-                        boardPosition
-                        lossPositions
-                )
-            )
-            -
-            (
                 calculateProbabilityFromDealerHands
                     boardPosition
-                    tiePositions
+                    lossPositions
+                
             )
+            -
+            calculateProbabilityFromDealerHands
+                boardPosition
+                tiePositions
+            
 
     --needs further commenting; this function should calculate
     --the value of all dealer hands by
@@ -589,7 +594,7 @@ standEVMap = parallelize
         boardPosition@(playerHand, dealerFaceUp) dealerHands =
             sum $
             calculateIndividualDealerHandProbability boardPosition <$>
-            ( Data.Vector.filter ((== dealerFaceUp) . head) dealerHands )
+            Data.Vector.filter ((== dealerFaceUp) . head) dealerHands 
 
     --recursive dispatcher to internal go function. implements true tail recursion
 
@@ -643,8 +648,8 @@ evaluateHitOrStand boardState =
     
     parallelize :: Map (Vector Card, Card) Suggestion
     parallelize = runEval $ do
-        let (set1, set2) = (Data.Set.splitAt (div (size gameStateList) 2) 
-                gameStateList)
+        let (set1, set2) = Data.Set.splitAt (div (size gameStateList) 2) 
+                gameStateList
         let (set11, set12) = Data.Set.splitAt (div (size set1) 2) set1
         let (set21, set22) = Data.Set.splitAt (div (size set2) 2) set2
         let (set111, set112) = Data.Set.splitAt (div (size set11) 2) set11
@@ -663,8 +668,8 @@ evaluateHitOrStand boardState =
         
         rseq map111 >> rseq map112 >> rseq map121 >> rseq map122
         rseq map211 >> rseq map212 >> rseq map221 >> rseq map222
-        pure $ ((union map111 map112) `union` (union map121 map122)) `union` 
-            ((union map211 map212) `union` (union map221 map222))
+        pure $ union map111 map112 `union` union map121 map122 `union` 
+            union map211 map212 `union` union map221 map222
 
 evaluateHitOrStandInner :: (Vector Card, Card) -> Suggestion
 evaluateHitOrStandInner boardState@(playerCards, dealerFaceUp) =
@@ -685,7 +690,7 @@ appendCardToPlayerHand :: Vector Card -> Vector (Vector Card)
 appendCardToPlayerHand playerCards =
     do
         newCard <- twoToAce
-        if 21 < (cardsValueOf $ playerCards `snoc` newCard) ||
+        if 21 < cardsValueOf (playerCards `snoc` newCard) ||
             length playerCards == 6
                 then Data.Vector.empty
                 else pure $ playerCards `snoc` newCard
@@ -716,7 +721,7 @@ calculateProbabilityOfNewCard playerCards@(last -> TenJackQueenKing)
         /
         fromIntegral
         ( 417 - length cardsInPlay )
-calculateProbabilityOfNewCard playerCards@(last ->card) dealerFaceUp =
+calculateProbabilityOfNewCard playerCards@(last -> card) dealerFaceUp =
     let cardsInPlay = playerCards `snoc` dealerFaceUp in
             
     fromIntegral
@@ -747,20 +752,20 @@ calculateHitEV dealerFaceUp (oddsOfNewCard , playerCards ) =
 --like splits, doubles, surrenders. After this section, we'll have the stuff that pushes
 --the code into the JSON.
 
-
-multiplyFirstBySecondInTuple :: (Double, Double) -> Double
-multiplyFirstBySecondInTuple (a,b) = a*b
-
-
 evaluateDoubleAction :: BoardPosition -> Suggestion --this function needs to be adjusted for how doubles affect odds
 evaluateDoubleAction (playerCards, dealerFaceUp) =
     Suggestion
     (   --Did not pass testing. What?--
         (+1).(*2).subtract 1 $ --provisional estimate of how doubles affect odds
         sum $
-        multiplyFirstBySecondInTuple .
-        fmap (standEVMap Data.Map.Strict.!) .
-        fmap ((, dealerFaceUp). ( Data.Vector.fromList . sort . Data.Vector.toList )) .
+        uncurry (*) .
+        fmap
+        (
+            (standEVMap Data.Map.Strict.!) .
+            (, dealerFaceUp) .
+            Data.Vector.fromList . sort . Data.Vector.toList
+        )
+        .
         adjustProbabilityByNewCard dealerFaceUp <$>
         appendCardToPlayerHand playerCards
         ,
@@ -773,7 +778,7 @@ evaluateSplit (playerCards, dealerFaceUp) = --as with evaluateDoubleAction, you 
     (
         (+1).(*2).subtract 1 $  --provisional estimate of how doubles affect odds
         sum $
-        multiplyFirstBySecondInTuple .
+        uncurry (*) .
         fmap 
         (
             fst .
@@ -785,9 +790,7 @@ evaluateSplit (playerCards, dealerFaceUp) = --as with evaluateDoubleAction, you 
         .
         adjustProbabilityByNewCard dealerFaceUp <$>
         appendCardToPlayerHand
-        (
-            init playerCards
-        )
+        (init playerCards)
         ,
         Split
     )
@@ -810,7 +813,6 @@ evaluateDoubleNoSurrender boardPosition =
 
 evaluateSplitDoubleSurrender :: BoardPosition -> Suggestion
 evaluateSplitDoubleSurrender boardPosition =
-    
     maximum
     (
         [
@@ -824,7 +826,6 @@ evaluateSplitDoubleSurrender boardPosition =
 
 evaluateNoSplitDoubleSurrender :: BoardPosition -> Suggestion
 evaluateNoSplitDoubleSurrender boardPosition =
-    
     maximum
     (
         [
@@ -835,16 +836,16 @@ evaluateNoSplitDoubleSurrender boardPosition =
         :: Vector Suggestion
     )
 
---Going to peek ahead and compute EV.
+--Going to peek ahead and compute EV, just to set up a system of tests.
+--Currently, this test is failing substantially and is revealing an EV higher
+--than it should be.
 
-
-
-gEye :: Double
-gEye =
+checkEVofGame :: Double
+checkEVofGame =
     sum $
-    multiplyFirstBySecondInTuple <$>
-    second applyApplicableEvaluation <$>
-    first probabilityOfStartingHandsSplitter <$>
+    uncurry (*) .
+    second applyApplicableEvaluation .
+    first probabilityOfStartingHandsSplitter .
     dupe <$>
     listOfStartingHands
 
@@ -854,19 +855,23 @@ applyApplicableEvaluation boardState@(playerCards, dealerFaceUp)=
         (a , b) | a == b ->  evaluateSplitDoubleSurrender boardState
         _ -> evaluateNoSplitDoubleSurrender boardState
 
+
 listOfStartingHands :: Vector (Vector Card, Card)
 listOfStartingHands =  Data.Vector.fromList . Data.Set.toList $ Data.Set.filter ((==2).length.fst) gameStateList
+
 
 probabilityOfStartingHandsSplitter :: BoardPosition -> Double
 probabilityOfStartingHandsSplitter boardPosition@(playerCards, dealerFaceUp) =
     case (playerCards Data.Vector.! 0 , playerCards Data.Vector.! 1) of
-        (a , b) | a == b -> 1*probabilityOfStartingHands boardPosition
+        (a , b) | a == b -> probabilityOfStartingHands boardPosition
         _ -> 2 * probabilityOfStartingHands boardPosition
+
 
 probabilityOfStartingHands :: BoardPosition -> Double
 probabilityOfStartingHands boardPosition@(playerCards, dealerFaceUp) =
-    internalSplitter (playerCards Data.Vector.! 0) [] * internalSplitter (playerCards Data.Vector.! 1) [playerCards Data.Vector.! 0] *
-    internalSplitter (dealerFaceUp) playerCards
+    internalSplitter (playerCards Data.Vector.! 0) [] *
+    internalSplitter (playerCards Data.Vector.! 1) [playerCards Data.Vector.! 0] *
+    internalSplitter dealerFaceUp playerCards
 
   where
 
@@ -875,10 +880,10 @@ probabilityOfStartingHands boardPosition@(playerCards, dealerFaceUp) =
     internalSplitter other cardsInPlay =
         otherCalc cardsInPlay other
 
-    tensCalc :: Vector Card -> EV ---does the +1 need to be done to card odds here? Reverted, but needs checking.
-    tensCalc cardsInPlay = --test verification seems to suggest the +1 isn't necessary, but it's perfectly
-            fromIntegral --possible that the tests are wrong. Then again, I'm using two stacks this time.
-            ( --might need to add to the denominator, who knows.
+    tensCalc :: Vector Card -> EV
+    tensCalc cardsInPlay =
+            fromIntegral
+            ( 
                 128 -
                 length ( Data.Vector.filter (==TenJackQueenKing) cardsInPlay)
             )
@@ -896,3 +901,71 @@ probabilityOfStartingHands boardPosition@(playerCards, dealerFaceUp) =
             /
             fromIntegral
             (416 - length cardsInPlay)
+
+--JSON producers, as well as the outputter.
+
+writeJSONOutput :: FilePath -> IO ()
+writeJSONOutput filepath = LB.writeFile filepath jsonEncodedList
+
+
+jsonEncodedList :: LB.ByteString
+jsonEncodedList = encode blackjackActionDirectory
+
+
+blackjackActionDirectory :: BlackjackActionDirectoryTopLevel
+blackjackActionDirectory =
+    BlackjackActionDirectoryTopLevel $
+    makeMainBranches $
+    Data.Set.filter ((==2) . length . fst) gameStateList
+
+
+makeMainBranches :: Set BoardPosition -> Vector (GameState, BranchContents)
+makeMainBranches setOfStartingPositions =
+    fmap appendBranches .
+    Data.Vector.fromList .
+    Data.Set.toList $
+    setOfStartingPositions
+
+
+appendBranches :: BoardPosition -> (GameState, BranchContents)
+appendBranches boardPosition =
+    (GameState boardPosition, BranchContents $ createBranchContents boardPosition)
+
+
+createBranchContents :: BoardPosition -> Vector (GameState, AnnotatedSuggestions)
+createBranchContents boardPosition =
+    fmap branchContentsMaker $
+    Data.Vector.fromList $
+    Data.Set.toList $
+    Data.Set.filter ((<6) . length . fst) $
+    Data.Set.filter (startsWithUnsafeTwoOnly boardPosition) gameStateList
+
+
+startsWithUnsafeTwoOnly :: BoardPosition -> BoardPosition -> Bool
+startsWithUnsafeTwoOnly (prefix,_) (positionToBeChecked,_)
+    | prefix Data.Vector.! 0 == positionToBeChecked Data.Vector.!0 && prefix Data.Vector.!1 == positionToBeChecked Data.Vector.!1 =
+        True
+    | otherwise = False
+
+
+branchContentsMaker :: BoardPosition -> (GameState, AnnotatedSuggestions)
+branchContentsMaker boardPosition@(playerCards,_) =
+    (GameState boardPosition, AnnotatedSuggestions $ makeAnnotatedSuggestions boardPosition )
+
+
+makeAnnotatedSuggestions :: BoardPosition -> Vector (AllowedActions, Suggestion, Probability)
+makeAnnotatedSuggestions boardPosition
+    | 2 < (length.fst) boardPosition =
+        [(HitStandOnly, evaluateHitOrStand boardPosition, ())]
+    | fst boardPosition Data.Vector.! 0 == fst boardPosition Data.Vector.! 1 =
+        [
+            (ActionsSplitSurrenderDouble, evaluateSplitDoubleSurrender boardPosition, ()),
+            (ActionsDouble, evaluateNoSplitDoubleSurrender boardPosition, ()),
+            (HitStandOnly, evaluateHitOrStand boardPosition, ())
+        ]
+    | otherwise =
+        [
+            (ActionsSurrenderDouble, evaluateNoSplitDoubleSurrender boardPosition, ()),
+            (ActionsDouble, evaluateNoSplitDoubleSurrender boardPosition, ()),
+            (HitStandOnly, evaluateHitOrStand boardPosition, ())
+        ]
