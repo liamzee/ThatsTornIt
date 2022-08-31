@@ -1,6 +1,6 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase, MonadComprehensions #-}
+{-# LANGUAGE OverloadedStrings, LambdaCase #-}
 {-# LANGUAGE OverloadedLists, DeriveGeneric, DeriveAnyClass #-}
-{-# LANGUAGE ViewPatterns, TupleSections #-}
+{-# LANGUAGE ViewPatterns, TupleSections, ApplicativeDo #-}
 
 {-This file, at least for now, is going to be done as a single module.
 Comments like these will split up the parts of the module, it's not good
@@ -14,6 +14,14 @@ led to substantial bugs with previous iterations.-}
     So far, there are a few key painpoints that need to be verified.
     First, are the various probability calculators correct?
     Second, are the generators for cards correct?
+-}
+
+{- 
+
+STANDING AND IMPORTANT QUESTION:
+
+DOES MY ALGORITHM ACCOUNT FOR PLAYER BUST CASES?
+
 -}
 
 module Main where
@@ -30,137 +38,36 @@ import Data.Vector ( Vector, generate, (!), modify,
     empty, cons, snoc, last,
     null, splitAt, init, length,
     sum, tail, filter, unfoldrExactN,
-    toList, (//), head, elem, thaw, freeze, fromList)
+    toList, (//), head, elem, thaw, freeze, fromList, partition)
 import Prelude hiding (head, map, sum, null, length, last,
     splitAt, init, tail, filter)
-import Criterion.Main
+import Criterion.Main ()
 import Control.DeepSeq ( NFData, force, deepseq )
-import Control.Parallel.Strategies
+import Control.Parallel.Strategies ( NFData, rpar, rseq, runEval )
 import Control.Monad ((<=<), (>=>), join)
-import Data.Map.Strict ( Map, fromSet, union, (!) )
-import Data.Set hiding (union)
+import Data.Map.Lazy ( Map, fromSet, union, (!), fromList )
+import Data.Set
+    ( filter,
+      fromAscList,
+      fromList,
+      map,
+      singleton,
+      size,
+      splitAt,
+      toList,
+      unions,
+      Set )
 import Control.Monad.ST (runST)
-import Data.List (sort)
+import Data.List (sort, intersect, null)
 import Debug.Trace (trace, traceShowId)
-import Control.Arrow
+import Control.Arrow ( Arrow(first, second) )
+import Data.Functor ((<&>))
+import Data.Bifunctor (bimap)
+import Data.Map (fold)
+import Data.Map.Lazy (foldl')
+import ProbabilityCalculator (probabilityOfEventCalculator)
+import Types
 
-
-data Card
-    = Two
-    | Three
-    | Four
-    | Five
-    | Six
-    | Seven
-    | Eight
-    | Nine
-    | TenJackQueenKing
-    | Ace
-
-    deriving (Show, Generic, Eq, Ord, Enum, NFData)
-
-instance FromJSON Card
-instance ToJSON Card
-
-
-data Action
-    = Stand
-    | Hit
-    | Surrender
-    | DoubleAction
-    | Split
-
-    deriving (Show, Generic, Eq, Ord, NFData )
-
-instance FromJSON Action
-instance ToJSON Action
-
-
-data AllowedActions
-    = ActionsSplitSurrenderDouble
-    | ActionsSurrenderDouble
-    | ActionsDouble
-    | HitStandOnly
-
-    deriving (Show, Generic, Eq, Ord, NFData )
-
-instance FromJSON AllowedActions
-instance ToJSON AllowedActions
-
-
-type BoardPosition = (PlayerCards, DealerFaceUp)
-
-newtype GameState
-    = GameState
-
-    {
-      gameState :: BoardPosition
-    }
-
-    deriving (Show, Generic , Eq , Ord, NFData )
-
-instance FromJSON GameState
-instance ToJSON GameState
-
-
-newtype BlackjackActionDirectoryTopLevel
-    = BlackjackActionDirectoryTopLevel
-
-    {
-      mainBranches :: Vector ( GameState , BranchContents )
-    }
-
-    deriving (Show, Generic, NFData)
-
-instance FromJSON BlackjackActionDirectoryTopLevel
-instance ToJSON BlackjackActionDirectoryTopLevel
-
-
-type DealerFaceUp = Card
-type PlayerCards = Vector Card
-type DealerHand = Vector Card
-
-
-newtype BranchContents
-    = BranchContents
-
-    {
-      branchContents :: Vector ( GameState , AnnotatedSuggestions )
-    }
-
-    deriving ( Show , Generic , Eq , Ord, NFData )
-
-instance FromJSON BranchContents
-instance ToJSON BranchContents
-
-
-newtype AnnotatedSuggestions
-    = AnnotatedSuggestions
-
-    {
-      annotatedSuggestions :: Vector ( AllowedActions , Suggestion , Probability )
-    }
-
-    deriving ( Show , Generic , Eq , Ord , NFData )
-
-instance FromJSON AnnotatedSuggestions
-instance ToJSON AnnotatedSuggestions
-
-
-type Probability = () -- not providing this functionality right now.
-type EV = Double
-
-newtype Suggestion
-    = Suggestion
-
-    {
-      suggestion :: ( EV , Action )
-    }
-
-    deriving ( Show , Generic , Eq , Ord , NFData)
-
-instance FromJSON Suggestion
-instance ToJSON Suggestion
 
 --Rebuilt around 3 main memoizations, namely the
 --standEV list, the player hands list, and
@@ -170,8 +77,8 @@ main :: IO ()
 main = do
     print =<< getCurrentTime
     print checkEVofGame
-    tfd <- saveFileDialog "" "" [""] "" >>= pure . unpack . fromMaybe ""
-    writeJSONOutput tfd
+--    tfd <- saveFileDialog "" "" [""] "" <&> (unpack . fromMaybe "")
+--    writeJSONOutput tfd
     --writeFile "C:\\users\\liam\\desktop\\TTITest.txt" $ show standEVMap
     print =<< getCurrentTime
 
@@ -185,17 +92,17 @@ twoToAce =
 
 gameStateList :: Set (Vector Card, Card)
 gameStateList =
-    appendToLengthNGameState 5 $
-    appendToLengthNGameState 4 $
+    appendToLengthNGameState 5 .
+    appendToLengthNGameState 4 .
     appendToLengthNGameState 3 $
-    appendToLengthNGameState 2 $
+    appendToLengthNGameState 2
     allPairsAndDealerFaceUps
   where
     allPairsAndDealerFaceUps :: Set (Vector Card, Card)
     allPairsAndDealerFaceUps =
-        fromAscList . Data.Vector.toList $
+        Data.Set.fromAscList . Data.Vector.toList $
         (generate 2 (const Two) , Two) `cons`
-        unfoldrExactN 549(dupe.addOneToContentsTwoCards)
+        unfoldrExactN 549 (dupe.addOneToContentsTwoCards)
         (generate 2 (const Two) , Two)
 
     addOneToContentsTwoCards :: ( Vector Card , Card ) -> ( Vector Card , Card )
@@ -239,7 +146,7 @@ gameStateList =
             | givenLength > length vectorCard =
                 singleton (vectorCard, card)
             | otherwise =
-                Data.Set.fromList . Data.Vector.toList $
+                Data.Set.fromAscList . Data.Vector.toList $
                 cons (vectorCard , card) $
                     do
                         newCard <- Data.Vector.filter
@@ -261,7 +168,7 @@ incrementCardAceUnsafe = \case
     Eight -> Nine
     Nine -> TenJackQueenKing
     TenJackQueenKing -> Ace
-    Ace -> error "attempt to increment an ace"
+    Ace -> error "attempted to increment an ace"
 
 --Key bit of code, used to calculate the value of a Vector Card.
 --Please note that the separate Inner function sems to produce
@@ -269,23 +176,25 @@ incrementCardAceUnsafe = \case
 
 cardsValueOf :: Vector Card -> Int
 cardsValueOf cardVector =
-    cardsValueInner cardVector 0 0
+    cardsValueInner cardVector (0,0)
 
 
-cardsValueInner :: Vector Card -> Int -> Int -> Int
-cardsValueInner (Data.Vector.null -> True) aces otherValue
+cardsValueInner :: Vector Card -> (Int,Int) -> Int
+cardsValueInner (Data.Vector.null -> True) (aces, otherValue)
         | aces + otherValue > 21 =
             aces + otherValue
         | aces * 11 + otherValue > 21 =
-            cardsValueInner Data.Vector.empty (aces-1) (otherValue+1)
+            cardsValueInner Data.Vector.empty (aces-1, otherValue+1)
         | otherwise =
             aces * 11 + otherValue
-cardsValueInner cards aces otherValue =
+cardsValueInner cards (aces,otherValue) =
+    cardsValueInner (init cards) $
     case last cards of
-            Ace ->
-                cardsValueInner (init cards) ( aces + 1 ) otherValue
-            _ ->
-                cardsValueInner (init cards) aces $
+        Ace ->
+            (aces + 1 , otherValue)
+        _ ->
+            (
+                aces,
                 (otherValue +) $
                 case last cards of
                     Two -> 2
@@ -297,6 +206,7 @@ cardsValueInner cards aces otherValue =
                     Eight -> 8
                     Nine -> 9
                     TenJackQueenKing -> 10
+            )
 
 
 dupe :: a -> ( a , a )
@@ -307,18 +217,18 @@ dupe input = ( input , input )
 
 --The core dealerHand list, and dealerHands that are checked and summed
 --by other mechanisms within the code.
-            
+
 
 dealerHandList :: Vector (Vector Card) --outstanding problem: 
 dealerHandList =
+    appendDealerCards .
+    appendDealerCards .
     appendDealerCards $
-    appendDealerCards $
-    appendDealerCards $
-    appendDealerCards $
+    appendDealerCards
     allPairs
   where
     allPairs :: Vector (Vector Card)
-    allPairs = 
+    allPairs =
         generate 2 (const Two) `cons`
         unfoldrExactN 99 (dupe . addOneToContentsTwoCardsDealer)
         (generate 2 (const Two))
@@ -331,7 +241,7 @@ dealerHandList =
                 (
                     \u -> do
                         write u 0 $ incrementCardAceUnsafe notAce
-                        write u 1 $ Two
+                        write u 1 Two
                 )
                 vectorCard
             ( _ , secondElement ) ->
@@ -367,27 +277,21 @@ dealerHandNotSix =
 
 dealerHand21WithoutNatural :: Vector (Vector Card)
 dealerHand21WithoutNatural =
-    Data.Vector.filter (flip notElem dealerHandNatural) $
+    Data.Vector.filter (`notElem` dealerHandNatural) $
     Data.Vector.filter ( (==21) . cardsValueOf ) dealerHandNotSix
-                                                 
+
 
 dealerHandNatural :: Vector (Vector Card)
 dealerHandNatural =
-    [[Ace, TenJackQueenKing],[TenJackQueenKing,Ace]]
+    [
+        [Ace, TenJackQueenKing],
+        [TenJackQueenKing,Ace]
+    ]
 
 
 dealerHand21Lose :: Vector (Vector Card)
 dealerHand21Lose =
-    Data.Vector.filter
-        (\u ->
-        (==6) (length u) ||
-        Data.Vector.elem u
-            [
-                [Ace, TenJackQueenKing],
-                [TenJackQueenKing, Ace]
-            ]
-        )
-        dealerHandList
+    dealerHandNatural <> dealerHandSix
 
 
 dealerHand20Lose :: Vector (Vector Card)
@@ -443,39 +347,306 @@ dealerHand20 =
 -- calculations with lookups for hit vs stand calculations and recommendations
 -- for actions.
 
-standEVMap :: Map (Vector Card, Card) EV
-standEVMap = parallelize
-  where
-    -- sort of a hack to enable parallelism on standEV. Seems to work well; reduces
-    -- wait time by 80% on 8 threads.
-    parallelize :: Map (Vector Card, Card) EV
-    parallelize = runEval $ do
-        let (set1, set2) = (Data.Set.splitAt (div (size standEVSet) 2) 
-                standEVSet)
+parallelize :: NFData a => (BoardPosition -> a) -> Map BoardPosition a
+parallelize conversionFunction =
+
+    runEval $ do
+        let (set1, set2) =
+                Data.Set.splitAt (div (size gameStateList) 2) gameStateList
         let (set11, set12) = Data.Set.splitAt (div (size set1) 2) set1
         let (set21, set22) = Data.Set.splitAt (div (size set2) 2) set2
         let (set111, set112) = Data.Set.splitAt (div (size set11) 2) set11
         let (set121, set122) = Data.Set.splitAt (div (size set12) 2) set12
         let (set211, set212) = Data.Set.splitAt (div (size set21) 2) set21
         let (set221, set222) = Data.Set.splitAt (div (size set22) 2) set22
+        let (set1111, set1112) = Data.Set.splitAt (div (size set22) 2) set111
+        let (set1121, set1122) = Data.Set.splitAt (div (size set22) 2) set112
+        let (set1211, set1212) = Data.Set.splitAt (div (size set22) 2) set121
+        let (set1221, set1222) = Data.Set.splitAt (div (size set22) 2) set122
+        let (set2111, set2112) = Data.Set.splitAt (div (size set22) 2) set211
+        let (set2121, set2122) = Data.Set.splitAt (div (size set22) 2) set212
+        let (set2211, set2212) = Data.Set.splitAt (div (size set22) 2) set221
+        let (set2221, set2222) = Data.Set.splitAt (div (size set22) 2) set222
 
-        map111 <- rpar $ force $ fromSet calculateStandEV set111
-        map112 <- rpar $ force $ fromSet calculateStandEV set112
-        map121 <- rpar $ force $ fromSet calculateStandEV set121
-        map122 <- rpar $ force $ fromSet calculateStandEV set122
-        map211 <- rpar $ force $ fromSet calculateStandEV set211
-        map212 <- rpar $ force $ fromSet calculateStandEV set212
-        map221 <- rpar $ force $ fromSet calculateStandEV set221
-        map222 <- rpar $ force $ fromSet calculateStandEV set222
-        
-        rseq map111 >> rseq map112 >> rseq map121 >> rseq map122
-        rseq map211 >> rseq map212 >> rseq map221 >> rseq map222
-        pure $ ((union map111 map112) `union` (union map121 map122)) `union` 
-            ((union map211 map212) `union` (union map221 map222))
-        
-    
-    standEVSet :: Set (Vector Card, Card)
-    standEVSet = gameStateList
+        map1111 <- rpar $ force $ fromSet conversionFunction set1111
+        map1112 <- rpar $ force $ fromSet conversionFunction set1112
+        map1121 <- rpar $ force $ fromSet conversionFunction set1121
+        map1122 <- rpar $ force $ fromSet conversionFunction set1122
+
+        map1211 <- rpar $ force $ fromSet conversionFunction set1211
+        map1212 <- rpar $ force $ fromSet conversionFunction set1212
+        map1221 <- rpar $ force $ fromSet conversionFunction set1221
+        map1222 <- rpar $ force $ fromSet conversionFunction set1222
+
+        map2111 <- rpar $ force $ fromSet conversionFunction set2111
+        map2112 <- rpar $ force $ fromSet conversionFunction set2112
+        map2121 <- rpar $ force $ fromSet conversionFunction set2121
+        map2122 <- rpar $ force $ fromSet conversionFunction set2122
+
+        map2211 <- rpar $ force $ fromSet conversionFunction set2211
+        map2212 <- rpar $ force $ fromSet conversionFunction set2212
+        map2221 <- rpar $ force $ fromSet conversionFunction set2221
+        map2222 <- rpar $ force $ fromSet conversionFunction set2222
+
+
+        rseq map1111 >> rseq map1112 >> rseq map1121 >> rseq map1122
+        rseq map1211 >> rseq map1212 >> rseq map1221 >> rseq map1222
+        rseq map2111 >> rseq map2112 >> rseq map2121 >> rseq map2122
+        rseq map2211 >> rseq map2212 >> rseq map2221 >> rseq map2222
+        pure $ (((map1111 `union` map1112) `union` (map1121 `union` map1122)) `union`
+            (map1211 `union` map1212) `union` (map1221 `union` map1222)) `union`
+            (((map2111 `union` map2112) `union` (map2121 `union` map2122)) `union`
+            ((map2211 `union` map2212) `union` (map2221 `union` map2222)))
+
+sumDealerProbabilityMap2 :: EV
+sumDealerProbabilityMap2 = foldl' (+) 0 dealerProbabilityMap2
+
+dealerProbabilityMap2 :: Map (Vector Card) EV
+dealerProbabilityMap2 = Data.Map.Lazy.fromSet checkProbability (Data.Set.fromList . Data.Vector.toList $ dealerHandList)
+  where
+    checkProbability :: Vector Card -> EV
+    checkProbability specificDealerHand = calculateIndividualDealerHandProbability specificDealerHand
+      where
+        calculateIndividualDealerHandProbability
+            :: Vector Card -> EV
+        calculateIndividualDealerHandProbability specificDealerHand =
+            go (pure $ head specificDealerHand) (tail specificDealerHand) 1
+          where
+            go :: Vector Card -> Vector Card -> Double -> EV
+            go _ (Data.Vector.null -> True) storedProbability =
+                storedProbability
+            go cardsInPlay dealerHand@(Data.Vector.head -> TenJackQueenKing)
+                storedProbability =
+                    go (cardsInPlay `snoc` TenJackQueenKing) (tail dealerHand)
+                    (tensCalc cardsInPlay * storedProbability)
+            go cardsInPlay dealerHand storedProbability =
+                let other = Data.Vector.head dealerHand in
+
+                go (cardsInPlay `snoc` other) (tail dealerHand)
+                (otherCalc cardsInPlay other * storedProbability)
+
+
+        tensCalc :: Vector Card -> EV
+        tensCalc cardsInPlay =
+            fromIntegral
+            (
+                126 -
+                length ( Data.Vector.filter (==TenJackQueenKing) cardsInPlay )
+            )
+            /
+            fromIntegral
+            (414 - length cardsInPlay )
+
+
+        otherCalc :: Vector Card -> Card -> EV
+        otherCalc cardsInPlay card =
+            fromIntegral
+            (
+                30 -
+                length ( Data.Vector.filter (==card) cardsInPlay )
+            )
+            /
+            fromIntegral
+            (414 - length cardsInPlay)
+
+
+dealerProbabilityMap3 :: Map (Vector Card) EV
+dealerProbabilityMap3 = Data.Map.Lazy.fromSet checkProbability (Data.Set.fromList . Data.Vector.toList $ dealerHandList)
+  where
+    checkProbability :: Vector Card -> EV
+    checkProbability specificDealerHand = calculateIndividualDealerHandProbability specificDealerHand
+      where
+        calculateIndividualDealerHandProbability
+            :: Vector Card -> EV
+        calculateIndividualDealerHandProbability specificDealerHand =
+            go (pure $ head specificDealerHand) (tail specificDealerHand) 1
+          where
+            go :: Vector Card -> Vector Card -> Double -> EV
+            go _ (Data.Vector.null -> True) storedProbability =
+                storedProbability
+            go cardsInPlay dealerHand@(Data.Vector.head -> TenJackQueenKing)
+                storedProbability =
+                    go (cardsInPlay `snoc` TenJackQueenKing) (tail dealerHand)
+                    (tensCalc cardsInPlay * storedProbability)
+            go cardsInPlay dealerHand storedProbability =
+                let other = Data.Vector.head dealerHand in
+
+                go (cardsInPlay `snoc` other) (tail dealerHand)
+                (otherCalc cardsInPlay other * storedProbability)
+
+
+        tensCalc :: Vector Card -> EV
+        tensCalc cardsInPlay =
+            fromIntegral
+            (
+                125 -
+                length ( Data.Vector.filter (==TenJackQueenKing) cardsInPlay )
+            )
+            /
+            fromIntegral
+            (413 - length cardsInPlay )
+
+
+        otherCalc :: Vector Card -> Card -> EV
+        otherCalc cardsInPlay card =
+            fromIntegral
+            (
+                29 -
+                length ( Data.Vector.filter (==card) cardsInPlay )
+            )
+            /
+            fromIntegral
+            (413 - length cardsInPlay)
+
+
+dealerProbabilityMap4 :: Map (Vector Card) EV
+dealerProbabilityMap4 = Data.Map.Lazy.fromSet checkProbability (Data.Set.fromList . Data.Vector.toList $ dealerHandList)
+  where
+    checkProbability :: Vector Card -> EV
+    checkProbability specificDealerHand = calculateIndividualDealerHandProbability specificDealerHand
+      where
+        calculateIndividualDealerHandProbability
+            :: Vector Card -> EV
+        calculateIndividualDealerHandProbability specificDealerHand =
+            go (pure $ head specificDealerHand) (tail specificDealerHand) 1
+          where
+            go :: Vector Card -> Vector Card -> Double -> EV
+            go _ (Data.Vector.null -> True) storedProbability =
+                storedProbability
+            go cardsInPlay dealerHand@(Data.Vector.head -> TenJackQueenKing)
+                storedProbability =
+                    go (cardsInPlay `snoc` TenJackQueenKing) (tail dealerHand)
+                    (tensCalc cardsInPlay * storedProbability)
+            go cardsInPlay dealerHand storedProbability =
+                let other = Data.Vector.head dealerHand in
+
+                go (cardsInPlay `snoc` other) (tail dealerHand)
+                (otherCalc cardsInPlay other * storedProbability)
+
+
+        tensCalc :: Vector Card -> EV
+        tensCalc cardsInPlay =
+            fromIntegral
+            (
+                124 -
+                length ( Data.Vector.filter (==TenJackQueenKing) cardsInPlay )
+            )
+            /
+            fromIntegral
+            (412 - length cardsInPlay )
+
+
+        otherCalc :: Vector Card -> Card -> EV
+        otherCalc cardsInPlay card =
+            fromIntegral
+            (
+                28 -
+                length ( Data.Vector.filter (==card) cardsInPlay )
+            )
+            /
+            fromIntegral
+            (412 - length cardsInPlay)
+
+
+dealerProbabilityMap5 :: Map (Vector Card) EV
+dealerProbabilityMap5 = Data.Map.Lazy.fromSet checkProbability (Data.Set.fromList . Data.Vector.toList $ dealerHandList)
+  where
+    checkProbability :: Vector Card -> EV
+    checkProbability specificDealerHand = calculateIndividualDealerHandProbability specificDealerHand
+      where
+        calculateIndividualDealerHandProbability
+            :: Vector Card -> EV
+        calculateIndividualDealerHandProbability specificDealerHand =
+            go (pure $ head specificDealerHand) (tail specificDealerHand) 1
+          where
+            go :: Vector Card -> Vector Card -> Double -> EV
+            go _ (Data.Vector.null -> True) storedProbability =
+                storedProbability
+            go cardsInPlay dealerHand@(Data.Vector.head -> TenJackQueenKing)
+                storedProbability =
+                    go (cardsInPlay `snoc` TenJackQueenKing) (tail dealerHand)
+                    (tensCalc cardsInPlay * storedProbability)
+            go cardsInPlay dealerHand storedProbability =
+                let other = Data.Vector.head dealerHand in
+
+                go (cardsInPlay `snoc` other) (tail dealerHand)
+                (otherCalc cardsInPlay other * storedProbability)
+
+
+        tensCalc :: Vector Card -> EV
+        tensCalc cardsInPlay =
+            fromIntegral
+            (
+                123 -
+                length ( Data.Vector.filter (==TenJackQueenKing) cardsInPlay )
+            )
+            /
+            fromIntegral
+            (411 - length cardsInPlay )
+
+
+        otherCalc :: Vector Card -> Card -> EV
+        otherCalc cardsInPlay card =
+            fromIntegral
+            (
+                27 -
+                length ( Data.Vector.filter (==card) cardsInPlay )
+            )
+            /
+            fromIntegral
+            (411 - length cardsInPlay)
+
+dealerProbabilityMap6 :: Map (Vector Card) EV
+dealerProbabilityMap6 = Data.Map.Lazy.fromSet checkProbability (Data.Set.fromList . Data.Vector.toList $ dealerHandList)
+  where
+    checkProbability :: Vector Card -> EV
+    checkProbability specificDealerHand = calculateIndividualDealerHandProbability specificDealerHand
+      where
+        calculateIndividualDealerHandProbability
+            :: Vector Card -> EV
+        calculateIndividualDealerHandProbability specificDealerHand =
+            go (pure $ head specificDealerHand) (tail specificDealerHand) 1
+          where
+            go :: Vector Card -> Vector Card -> Double -> EV
+            go _ (Data.Vector.null -> True) storedProbability =
+                storedProbability
+            go cardsInPlay dealerHand@(Data.Vector.head -> TenJackQueenKing)
+                storedProbability =
+                    go (cardsInPlay `snoc` TenJackQueenKing) (tail dealerHand)
+                    (tensCalc cardsInPlay * storedProbability)
+            go cardsInPlay dealerHand storedProbability =
+                let other = Data.Vector.head dealerHand in
+
+                go (cardsInPlay `snoc` other) (tail dealerHand)
+                (otherCalc cardsInPlay other * storedProbability)
+
+
+        tensCalc :: Vector Card -> EV
+        tensCalc cardsInPlay =
+            fromIntegral
+            (
+                122 -
+                length ( Data.Vector.filter (==TenJackQueenKing) cardsInPlay )
+            )
+            /
+            fromIntegral
+            (410 - length cardsInPlay )
+
+
+        otherCalc :: Vector Card -> Card -> EV
+        otherCalc cardsInPlay card =
+            fromIntegral
+            (
+                26 -
+                length ( Data.Vector.filter (==card) cardsInPlay )
+            )
+            /
+            fromIntegral
+            (410 - length cardsInPlay)
+
+
+standEVMap :: Map (Vector Card, Card) EV
+standEVMap = parallelize calculateStandEV
 
     --Just working it out, the EV of a stand action should be:
     --
@@ -502,10 +673,9 @@ standEVMap = parallelize
     --In reality, filter seems cheap with vectors, so perhaps
     --this wasn't the best idea.
 
-    calculateStandEV :: (Vector Card, Card) -> EV
-    calculateStandEV boardPosition@(playerHand, dealerFaceUp)
-        | length playerHand == 2,
-          playerHand `Data.Vector.elem`
+calculateStandEV :: (Vector Card, Card) -> EV
+calculateStandEV boardPosition@(playerHand, dealerFaceUp)
+        | playerHand `Data.Vector.elem`
           [[TenJackQueenKing,Ace],[Ace,TenJackQueenKing]]
            =
             2.5 -
@@ -526,14 +696,14 @@ standEVMap = parallelize
                     )
                     dealerHandSix
                 )
-                (
+                $
                 Data.Vector.filter
                 (
                     ( playerHandValue == ) .
                     cardsValueOf
                 )
                 dealerHandSix
-                )
+
         | cardsValueOf playerHand == 21 =
             twoWinMinus2LossMinusTie boardPosition
                 dealerHand21Lose
@@ -554,33 +724,32 @@ standEVMap = parallelize
             twoWinMinus2LossMinusTie boardPosition
                 dealerHand17Lose
                 dealerHand17
-        | otherwise =
+        | otherwise, playerHandValue <- cardsValueOf playerHand =
             twoWinMinus2LossMinusTie boardPosition
                 dealerHandList
                 Data.Vector.empty
-      where
 
         --providing a function to make the above boilerplate more concise.
 
-        twoWinMinus2LossMinusTie
-            :: (Vector Card, Card)
+twoWinMinus2LossMinusTie
+        :: (Vector Card, Card)
             -> Vector (Vector Card)
             -> Vector (Vector Card)
             -> EV
-        twoWinMinus2LossMinusTie boardPosition lossPositions tiePositions =
+twoWinMinus2LossMinusTie boardPosition lossPositions tiePositions =
             2 -
             (
                 2 *
                 calculateProbabilityFromDealerHands
                     boardPosition
                     lossPositions
-                
+
             )
             -
             calculateProbabilityFromDealerHands
                 boardPosition
                 tiePositions
-            
+
 
     --needs further commenting; this function should calculate
     --the value of all dealer hands by
@@ -588,93 +757,71 @@ standEVMap = parallelize
     --with the board position (i.e, cards in play)
     --on the individual dealer hands
 
-    calculateProbabilityFromDealerHands
-        :: (Vector Card, Card) -> Vector (Vector Card) -> EV
-    calculateProbabilityFromDealerHands
+calculateProbabilityFromDealerHands
+        :: BoardPosition -> Vector (Vector Card) -> EV
+calculateProbabilityFromDealerHands
         boardPosition@(playerHand, dealerFaceUp) dealerHands =
             sum $
             calculateIndividualDealerHandProbability boardPosition <$>
-            Data.Vector.filter ((== dealerFaceUp) . head) dealerHands 
+            Data.Vector.filter ((== dealerFaceUp) . head) dealerHands
 
-    --recursive dispatcher to internal go function. implements true tail recursion
+    --Recursive dispatcher to internal go function. Implements true tail recursion
+    --Needs to be looked over again, due to weird numbers.
 
-    calculateIndividualDealerHandProbability
-        :: (Vector Card, Card) -> Vector Card -> EV
-    calculateIndividualDealerHandProbability (playerCards,dealerFaceUp)
+calculateIndividualDealerHandProbability
+        :: BoardPosition -> Vector Card -> EV
+calculateIndividualDealerHandProbability (playerCards,dealerFaceUp)
         specificDealerHand =
             go (playerCards `snoc` dealerFaceUp) (tail specificDealerHand) 1
       where
         go :: Vector Card -> Vector Card -> Double -> EV
         go _ (Data.Vector.null -> True) storedProbability =
             storedProbability
-        go cardsInPlay dealerHand@(Data.Vector.head -> TenJackQueenKing)
-            storedProbability =
-                go (cardsInPlay `snoc` TenJackQueenKing) (tail dealerHand)
-                (tensCalc cardsInPlay * storedProbability)
         go cardsInPlay dealerHand storedProbability =
-            let other = Data.Vector.head dealerHand in
+                go (cardsInPlay `snoc` head dealerHand) (tail dealerHand)
+                 $ probabilityOfEventCalculator cardsInPlay (head dealerHand) * storedProbability
 
-            go (cardsInPlay `snoc` other) (tail dealerHand)
-            (otherCalc cardsInPlay other * storedProbability)
-        
-        tensCalc :: Vector Card -> EV ---does the +1 need to be done to card odds here? Reverted, but needs checking.
-        tensCalc cardsInPlay = --test verification seems to suggest the +1 isn't necessary, but it's perfectly
-            fromIntegral --possible that the tests are wrong. Then again, I'm using two stacks this time.
-            ( --might need to add to the denominator, who knows.
+
+tensCalc :: Vector Card -> EV
+tensCalc cardsInPlay =
+            fromIntegral
+            (
                 128 -
-                length ( Data.Vector.filter (==TenJackQueenKing) cardsInPlay)
+                length ( Data.Vector.filter (==TenJackQueenKing) cardsInPlay )
             )
             /
             fromIntegral
             (416 - length cardsInPlay )
-        
-        otherCalc :: Vector Card -> Card -> EV
-        otherCalc cardsInPlay card =
+
+
+otherCalc :: Vector Card -> Card -> EV
+otherCalc cardsInPlay card =
             fromIntegral
-            (   
+            (
                 32 -
-                length ( Data.Vector.filter (==card) cardsInPlay)
+                length ( Data.Vector.filter (==card) cardsInPlay )
             )
             /
             fromIntegral
             (416 - length cardsInPlay)
 
--- The code succeding this is needs considerable checking and verification.
+-- The code succeeding this is needs considerable checking and verification.
 
-evaluateHitOrStand :: (Vector Card, Card) -> Suggestion
+--eta-reduction increases memory use.
+
+evaluateHitOrStand :: BoardPosition -> Suggestion
 evaluateHitOrStand boardState =
-    parallelize Data.Map.Strict.! boardState
-  where
-    
-    parallelize :: Map (Vector Card, Card) Suggestion
-    parallelize = runEval $ do
-        let (set1, set2) = Data.Set.splitAt (div (size gameStateList) 2) 
-                gameStateList
-        let (set11, set12) = Data.Set.splitAt (div (size set1) 2) set1
-        let (set21, set22) = Data.Set.splitAt (div (size set2) 2) set2
-        let (set111, set112) = Data.Set.splitAt (div (size set11) 2) set11
-        let (set121, set122) = Data.Set.splitAt (div (size set12) 2) set12
-        let (set211, set212) = Data.Set.splitAt (div (size set21) 2) set21
-        let (set221, set222) = Data.Set.splitAt (div (size set22) 2) set22
+    (Data.Map.Lazy.!) hitOrStandMap boardState
 
-        map111 <- rpar $ force $ fromSet evaluateHitOrStandInner set111
-        map112 <- rpar $ force $ fromSet evaluateHitOrStandInner set112
-        map121 <- rpar $ force $ fromSet evaluateHitOrStandInner set121
-        map122 <- rpar $ force $ fromSet evaluateHitOrStandInner set122
-        map211 <- rpar $ force $ fromSet evaluateHitOrStandInner set211
-        map212 <- rpar $ force $ fromSet evaluateHitOrStandInner set212
-        map221 <- rpar $ force $ fromSet evaluateHitOrStandInner set221
-        map222 <- rpar $ force $ fromSet evaluateHitOrStandInner set222
-        
-        rseq map111 >> rseq map112 >> rseq map121 >> rseq map122
-        rseq map211 >> rseq map212 >> rseq map221 >> rseq map222
-        pure $ union map111 map112 `union` union map121 map122 `union` 
-            union map211 map212 `union` union map221 map222
+
+hitOrStandMap :: Map BoardPosition Suggestion
+hitOrStandMap = parallelize evaluateHitOrStandInner
+
 
 evaluateHitOrStandInner :: (Vector Card, Card) -> Suggestion
 evaluateHitOrStandInner boardState@(playerCards, dealerFaceUp) =
     Suggestion $
-    max (standEVMap Data.Map.Strict.! boardState, Stand)
+    max (standEVMap Data.Map.Lazy.! boardState, Stand)
         (evaluateHit boardState, Hit)
 
 
@@ -691,7 +838,7 @@ appendCardToPlayerHand playerCards =
     do
         newCard <- twoToAce
         if 21 < cardsValueOf (playerCards `snoc` newCard) ||
-            length playerCards == 6
+            6 == length playerCards
                 then Data.Vector.empty
                 else pure $ playerCards `snoc` newCard
 
@@ -704,34 +851,14 @@ adjustProbabilityByNewCard dealerFaceUp playerCards =
         playerCards
     )
 
---needs checking, the 129 instead of 128 is supposed to compensate for the fact that
---we're rewinding the latest playercard to see the odds of it being drawn, so we
---pretend it's not already in the cardsInPlay.
---Same applies to 33 and 417.
+--modified to version that clears the additional card via init, from version using 129/33/417.
 
 calculateProbabilityOfNewCard :: Vector Card -> Card -> Double
 calculateProbabilityOfNewCard playerCards@(last -> TenJackQueenKing)
     dealerFaceUp =
-        let cardsInPlay = playerCards `snoc` dealerFaceUp in
-        fromIntegral
-        (
-            129 -
-            length ( Data.Vector.filter (==TenJackQueenKing) cardsInPlay)
-        )
-        /
-        fromIntegral
-        ( 417 - length cardsInPlay )
+        tensCalc $ init playerCards `snoc` dealerFaceUp
 calculateProbabilityOfNewCard playerCards@(last -> card) dealerFaceUp =
-    let cardsInPlay = playerCards `snoc` dealerFaceUp in
-            
-    fromIntegral
-    (   
-        33 -
-        length ( Data.Vector.filter (==card) cardsInPlay)
-    )
-    /
-    fromIntegral
-    (417 - length cardsInPlay)
+    otherCalc (init playerCards `snoc` dealerFaceUp) card
 
 
 calculateHitEV :: Card -> (Double , Vector Card) -> EV
@@ -746,8 +873,6 @@ calculateHitEV dealerFaceUp (oddsOfNewCard , playerCards ) =
         )
     )
 
-
-
 --The next section will be providing more complex actions, such as support for opening positions
 --like splits, doubles, surrenders. After this section, we'll have the stuff that pushes
 --the code into the JSON.
@@ -756,12 +881,12 @@ evaluateDoubleAction :: BoardPosition -> Suggestion --this function needs to be 
 evaluateDoubleAction (playerCards, dealerFaceUp) =
     Suggestion
     (   --Did not pass testing. What?--
-        (+1).(*2).subtract 1 $ --provisional estimate of how doubles affect odds
+        (+1).(*2).subtract 1 $
         sum $
         uncurry (*) .
         fmap
         (
-            (standEVMap Data.Map.Strict.!) .
+            (standEVMap Data.Map.Lazy.!) .
             (, dealerFaceUp) .
             Data.Vector.fromList . sort . Data.Vector.toList
         )
@@ -772,14 +897,33 @@ evaluateDoubleAction (playerCards, dealerFaceUp) =
         DoubleAction
     )
 
-evaluateSplit :: BoardPosition -> Suggestion
+-- looks like split EV has to support an extended dealerHands check to consider cards removed from the shoe. But generally
+-- it appears that split EV is accurate.
+
+evaluateSplit :: BoardPosition -> Suggestion --looks like first split forbids surrender, the second split allows surrender.
 evaluateSplit (playerCards, dealerFaceUp) = --as with evaluateDoubleAction, you need to find a meaningful way to adjust the EV.
-    Suggestion
+    Suggestion-- on current progress, it seems to be all a matter of evaluate split. subtract two, average, plus one doesn't make sense
+    --split needs to be fully recalculated, and it's likely going to create a situation wherein memoization fails.
     (
-        (+1).(*2).subtract 1 $  --provisional estimate of how doubles affect odds
-        sum $
+        subtract 1
+        (sum $
         uncurry (*) .
-        fmap 
+        fmap
+        (
+            fst .
+            suggestion .
+            evaluateNoSplitDoubleSurrender .
+            (, dealerFaceUp) .
+            ( Data.Vector.fromList . sort . Data.Vector.toList )
+        )
+        .
+        adjustProbabilityByNewCardModified dealerFaceUp (head playerCards) <$>
+        appendCardToPlayerHand
+        (init playerCards)
+    )
+        +
+        sum (uncurry (*) .
+        fmap
         (
             fst .
             suggestion .
@@ -788,12 +932,22 @@ evaluateSplit (playerCards, dealerFaceUp) = --as with evaluateDoubleAction, you 
             ( Data.Vector.fromList . sort . Data.Vector.toList )
         )
         .
-        adjustProbabilityByNewCard dealerFaceUp <$>
+        adjustProbabilityByNewCardModified dealerFaceUp (head playerCards) <$>
         appendCardToPlayerHand
-        (init playerCards)
+        (init playerCards))
+
         ,
         Split
     )
+  where
+    adjustProbabilityByNewCardModified :: Card -> Card -> Vector Card -> (Double, Vector Card)
+    adjustProbabilityByNewCardModified dealerFaceUp playerCard playerCards =
+        (
+            calculateProbabilityOfNewCard (cons playerCard playerCards) dealerFaceUp
+            ,
+            playerCards
+        )
+
 
 surrender :: Suggestion
 surrender = Suggestion (0.50, Surrender)
@@ -807,8 +961,7 @@ evaluateDoubleNoSurrender boardPosition =
         [
             evaluateDoubleAction boardPosition,
             evaluateHitOrStand boardPosition
-        ]
-        :: Vector Suggestion
+        ]        :: Vector Suggestion
     )
 
 evaluateSplitDoubleSurrender :: BoardPosition -> Suggestion
@@ -844,10 +997,10 @@ checkEVofGame :: Double
 checkEVofGame =
     sum $
     uncurry (*) .
-    second applyApplicableEvaluation .
-    first probabilityOfStartingHandsSplitter .
+    bimap probabilityOfStartingHandsSplitter applyApplicableEvaluation .
     dupe <$>
     listOfStartingHands
+
 
 applyApplicableEvaluation :: (Vector Card, DealerFaceUp) -> EV
 applyApplicableEvaluation boardState@(playerCards, dealerFaceUp)=
@@ -880,28 +1033,6 @@ probabilityOfStartingHands boardPosition@(playerCards, dealerFaceUp) =
     internalSplitter other cardsInPlay =
         otherCalc cardsInPlay other
 
-    tensCalc :: Vector Card -> EV
-    tensCalc cardsInPlay =
-            fromIntegral
-            ( 
-                128 -
-                length ( Data.Vector.filter (==TenJackQueenKing) cardsInPlay)
-            )
-            /
-            fromIntegral
-            (416 - length cardsInPlay )
-        
-    otherCalc :: Vector Card -> Card -> EV
-    otherCalc cardsInPlay card =
-            fromIntegral
-            (   
-                32 -
-                length ( Data.Vector.filter (==card) cardsInPlay)
-            )
-            /
-            fromIntegral
-            (416 - length cardsInPlay)
-
 --JSON producers, as well as the outputter.
 
 writeJSONOutput :: FilePath -> IO ()
@@ -918,13 +1049,13 @@ blackjackActionDirectory =
     makeMainBranches $
     Data.Set.filter ((==2) . length . fst) gameStateList
 
+--Eta-reduced, has implicit "setOfInputBoardPositions"
 
 makeMainBranches :: Set BoardPosition -> Vector (GameState, BranchContents)
-makeMainBranches setOfStartingPositions =
+makeMainBranches =
     fmap appendBranches .
     Data.Vector.fromList .
-    Data.Set.toList $
-    setOfStartingPositions
+    Data.Set.toList
 
 
 appendBranches :: BoardPosition -> (GameState, BranchContents)
