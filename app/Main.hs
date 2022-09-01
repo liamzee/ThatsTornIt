@@ -38,7 +38,7 @@ import Data.Vector ( Vector, generate, (!), modify,
     empty, cons, snoc, last,
     null, splitAt, init, length,
     sum, tail, filter, unfoldrExactN,
-    toList, (//), head, elem, thaw, freeze, fromList, partition)
+    toList, (//), head, elem, thaw, freeze, fromList, partition, maximum)
 import Prelude hiding (head, map, sum, null, length, last,
     splitAt, init, tail, filter)
 import Criterion.Main ()
@@ -956,17 +956,17 @@ surrender = Suggestion (0.50, Surrender)
 
 evaluateDoubleNoSurrender :: BoardPosition -> Suggestion
 evaluateDoubleNoSurrender boardPosition =
-    maximum
+    Data.Vector.maximum
     (
         [
             evaluateDoubleAction boardPosition,
             evaluateHitOrStand boardPosition
-        ]        :: Vector Suggestion
+        ]
     )
 
 evaluateSplitDoubleSurrender :: BoardPosition -> Suggestion
 evaluateSplitDoubleSurrender boardPosition =
-    maximum
+    Data.Vector.maximum
     (
         [
             evaluateSplit boardPosition,
@@ -974,20 +974,16 @@ evaluateSplitDoubleSurrender boardPosition =
             evaluateDoubleAction boardPosition,
             evaluateHitOrStand boardPosition
         ]
-        :: Vector Suggestion
     )
 
 evaluateNoSplitDoubleSurrender :: BoardPosition -> Suggestion
 evaluateNoSplitDoubleSurrender boardPosition =
-    maximum
-    (
-        [
-            evaluateDoubleAction boardPosition,
-            surrender,
-            evaluateHitOrStand boardPosition
-        ]
-        :: Vector Suggestion
-    )
+    Data.Vector.maximum
+    [
+        evaluateDoubleAction boardPosition,
+        surrender,
+        evaluateHitOrStand boardPosition
+    ]
 
 --Going to peek ahead and compute EV, just to set up a system of tests.
 --Currently, this test is failing substantially and is revealing an EV higher

@@ -2,10 +2,11 @@ module Parallelize where
     
 
 import Control.DeepSeq (NFData, force)
-import Main (BoardPosition, gameStateList)
+import Main (gameStateList)
 import Data.Map.Lazy ( union, Map, fromSet )
 import Control.Parallel.Strategies (runEval, rpar, rseq)
 import Data.Set (size, splitAt)
+import Types (BoardPosition)
 
 
 parallelize :: NFData a => (BoardPosition -> a) -> Map BoardPosition a
