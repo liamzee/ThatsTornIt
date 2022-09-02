@@ -3,7 +3,7 @@ module CalculateTypes where
 
 import Control.Parallel.Strategies (NFData)
 import GHC.Generics (Generic)
-import Data.Sequence
+import Data.Sequence ( Seq )
 
 
 data Card
@@ -18,6 +18,7 @@ data Card
     | TenJackQueenKing
     | Ace
     deriving (Eq, Ord, Enum, Generic, Show, NFData)
+    
 
 data Action
     = Hit

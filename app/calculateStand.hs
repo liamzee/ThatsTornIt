@@ -1,5 +1,4 @@
 {-# LANGUAGE OverloadedLists #-}
-{-# LANGUAGE GADTs #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Eta reduce" #-}
 
@@ -52,13 +51,14 @@ import CalculateHandValue (handValueOf, checkIfBust)
 -- EV of Win * Probability of Win + EV of Loss (-1) * Probability of Loss
 
 calculateStand :: BoardState -> EV
-calculateStand boardState@(playerCards, dealerFaceUp, removedCards) =
+calculateStand boardState@(playerCards, _, _) =
     eVWin playerCards *
     winProbability boardState
     +
     (-1 *
     lossProbability boardState
     )
+
 
 eVWin :: Seq Card -> Double
 eVWin playerCards
@@ -88,7 +88,7 @@ preFilterForDealerFaceUp dealerFaceUp =
 
 
 winProbability :: BoardState -> Double
-winProbability boardState@(playerCards, dealerFaceUp, removedCards)
+winProbability boardState@(playerCards, dealerFaceUp, _)
     | playerCards & isNatural =
         probabilityOfEvent boardState $ naturalWinFilter boardState $
             preFilterForDealerFaceUp dealerFaceUp
@@ -101,7 +101,7 @@ winProbability boardState@(playerCards, dealerFaceUp, removedCards)
 
 
 lossProbability :: BoardState -> Double
-lossProbability boardState@(playerCards, dealerFaceUp, removedCards)
+lossProbability boardState@(playerCards, dealerFaceUp, _)
     | playerCards & isNatural =
         0
     | 6 == length playerCards =
@@ -113,7 +113,7 @@ lossProbability boardState@(playerCards, dealerFaceUp, removedCards)
 
 
 naturalWinFilter :: BoardState -> Seq (Seq Card) -> Seq (Seq Card)
-naturalWinFilter (playerCards, dealerFaceUp, removedCards) handList =
+naturalWinFilter (_, _, _) handList =
     Sequ.filter
         (`notElem`
         ([[Ace, TenJackQueenKing],[TenJackQueenKing, Ace]] :: Seq (Seq Card)))
@@ -121,7 +121,7 @@ naturalWinFilter (playerCards, dealerFaceUp, removedCards) handList =
 
 
 sixCardCharlieWinFilter :: BoardState -> Seq (Seq Card) -> Seq (Seq Card)
-sixCardCharlieWinFilter (playerCards, dealerFaceUp, removedCards) handList =
+sixCardCharlieWinFilter (playerCards, _, _) handList =
     Sequ.filter sixCardCharlieWinList handList
   where
     sixCardCharlieWinList :: Seq Card -> Bool
@@ -138,7 +138,7 @@ sixCardCharlieWinFilter (playerCards, dealerFaceUp, removedCards) handList =
 
 
 sixCardCharlieLossFilter :: BoardState -> Seq (Seq Card) -> Seq (Seq Card)
-sixCardCharlieLossFilter (playerCards, dealerFaceUp, removedCards) handList = 
+sixCardCharlieLossFilter (playerCards, _, _) handList = 
     Sequ.filter sixCardCharlieLossList handList
   where
     sixCardCharlieLossList :: Seq Card -> Bool
@@ -156,7 +156,7 @@ sixCardCharlieLossFilter (playerCards, dealerFaceUp, removedCards) handList =
 
 
 normalWinFilter :: BoardState -> Seq (Seq Card) -> Seq (Seq Card)
-normalWinFilter (playerCards, dealerFaceUp, removedCards) handList =
+normalWinFilter (playerCards, _, _) handList =
     Sequ.filter normalWinList handList
   where
     normalWinList :: Seq Card -> Bool
@@ -176,7 +176,7 @@ normalWinFilter (playerCards, dealerFaceUp, removedCards) handList =
 
 
 normalLossFilter :: BoardState -> Seq (Seq Card) -> Seq (Seq Card)
-normalLossFilter (playerCards, dealerFaceUp, removedCards) handList =
+normalLossFilter (playerCards, _, _) handList =
     Sequ.filter normalLossList handList
   where
     normalLossList :: Seq Card -> Bool
@@ -196,13 +196,13 @@ normalLossFilter (playerCards, dealerFaceUp, removedCards) handList =
 
 
 calculateOddsOf :: (Seq Card, Card) -> Seq Card -> Double
-calculateOddsOf (cardsInPlay, dealerFaceUp) assessedHand
-    | dealerFaceUp /= index assessedHand 0 = 0
-    | otherwise = go cardsInPlay (Data.Sequence.drop 1 assessedHand) 1
+calculateOddsOf (cardsInPlay, dealerFaceUp) assessedHand =
+    go cardsInPlay (Data.Sequence.drop 1 assessedHand) 1
   where
     go cardsInPlay Empty acc = acc
     go cardsInPlay (front :<| rear) acc =
-        go (cardsInPlay :|> front) rear (calculateDrawChances cardsInPlay front * acc)
+        go (cardsInPlay :|> front) rear
+            (calculateDrawChances cardsInPlay front * acc)
 
 
 calculateDrawChances :: Seq Card -> Card -> Double
@@ -212,7 +212,8 @@ calculateDrawChances cardsInPlay card =
             | otherwise = 32 in
     fromIntegral
     (
-        cardsOfTypeLeftInDeck - length (Data.Sequence.filter (card==) cardsInPlay)
+        cardsOfTypeLeftInDeck -
+        length (Data.Sequence.filter (card==) cardsInPlay)
     )
     /
     fromIntegral

@@ -5,22 +5,28 @@ import CalculateTypes
 import Data.Sequence
 import qualified Data.Sequence as Sequ
 import Control.Applicative (Applicative(liftA2))
-import CalculateHandValue (checkIfBust, checkForSoft17)
+import CalculateHandValue (checkIfBust, checkForSoft17, handValueOf)
 
 
+dealerHands :: Seq (Seq Card)
 dealerHands =
     appendToCore =<< dealerHandsCore
 
+{- used to test.
+
 filterCheck hand =
     not (((not.checkForSoft17) hand && 6 /= Sequ.length hand) || checkIfBust hand || 6 < Sequ.length hand)
+
+-}
 
 dealerHandsCore :: Seq (Seq Card)
 dealerHandsCore =
     liftA2 ( (:|>) . pure ) twoToAce twoToAce
 
+    
 appendToCore :: Seq Card -> Seq (Seq Card)
 appendToCore hand
-    | checkForSoft17 hand || 6 == Sequ.length hand =
+    | 6 == Sequ.length hand || checkForSoft17 hand =
         pure hand
     | otherwise =
         checkIfBustNewHand hand =<< twoToAce 
@@ -31,7 +37,7 @@ appendToCore hand
             then pure newHand
             else appendToCore newHand
 
-
+{-
 appendNew :: Seq (Seq Card) -> Seq (Seq Card)
 appendNew inputHands = do
     oldHand <- inputHands
@@ -51,4 +57,4 @@ dealerHands5 :: Seq (Seq Card)
 dealerHands5 = appendNew dealerHands4
 
 dealerHands6 :: Seq (Seq Card)
-dealerHands6 = appendNew dealerHands5
+dealerHands6 = appendNew dealerHands5-}

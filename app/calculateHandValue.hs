@@ -20,10 +20,11 @@ checkIfBust hand =
     (21 <) . sum $ modifiedFromEnum <$> hand
   where
     modifiedFromEnum :: Card -> Int
-    modifiedFromEnum card =
-        if Ace == card
-            then 1
-            else fromEnumCard card
+    modifiedFromEnum card
+        | Ace == card =
+            1
+        | otherwise =
+            fromEnumCard card
 
 
 handValueOf :: Seq Card -> Int
