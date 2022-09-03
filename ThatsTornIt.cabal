@@ -31,6 +31,13 @@ executable ThatsTornIt
                       CalculateStand
                       CalculateDealerHands
                       CalculateTwoToAce
+                      CalculateProbabilityOfHand
+                      Parallelize
+                      CalculateHandValue
+                      CalculateNonSplitBoardStates
+                      
+                      ProbabilityCalculator
+                      Types
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:

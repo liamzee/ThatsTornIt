@@ -1,9 +1,9 @@
-{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DeriveAnyClass, DeriveGeneric, PatternSynonyms #-}
 module CalculateTypes where
 
 import Control.Parallel.Strategies (NFData)
 import GHC.Generics (Generic)
-import Data.Sequence ( Seq )
+import Data.Vector
 
 
 data Card
@@ -18,6 +18,9 @@ data Card
     | TenJackQueenKing
     | Ace
     deriving (Eq, Ord, Enum, Generic, Show, NFData)
+
+pattern Tens :: Card
+pattern Tens = TenJackQueenKing --for debugging, convenience.
     
 
 data Action
@@ -30,9 +33,9 @@ data Action
 
 
 type BoardState = (PlayerCards, DealerFaceUp, RemovedCards)
-type PlayerCards = Seq Card
+type PlayerCards = Vector Card
 type DealerFaceUp = Card
-type RemovedCards = Seq Card
+type RemovedCards = Vector Card
 
 type EV = Double
 type EVAction = (EV, Action)

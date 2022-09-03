@@ -3,8 +3,8 @@
 module CalculateTwoToAce where
     
 import CalculateTypes (Card(..))
-import Data.Sequence
+import Data.Vector
 
-twoToAce :: Seq Card
+twoToAce :: Vector Card
 twoToAce =
     [Two .. Ace]

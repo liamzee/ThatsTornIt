@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase #-}
+{-# LANGUAGE OverloadedStrings, LambdaCase, PatternSynonyms #-}
 {-# LANGUAGE OverloadedLists, DeriveGeneric, DeriveAnyClass #-}
 {-# LANGUAGE ViewPatterns, TupleSections, ApplicativeDo #-}
 
@@ -67,7 +67,10 @@ import Data.Map (fold)
 import Data.Map.Lazy (foldl')
 import ProbabilityCalculator (probabilityOfEventCalculator)
 import Types
+import qualified CalculateStand
+import qualified CalculateTypes as CT
 
+pattern Tens = CT.TenJackQueenKing
 
 --Rebuilt around 3 main memoizations, namely the
 --standEV list, the player hands list, and
@@ -76,7 +79,8 @@ import Types
 main :: IO ()
 main = do
     print =<< getCurrentTime
-    print checkEVofGame
+    print (CalculateStand.calculateStand ([CT.Two,CT.Five],Tens,[]))
+--    print checkEVofGame
 --    tfd <- saveFileDialog "" "" [""] "" <&> (unpack . fromMaybe "")
 --    writeJSONOutput tfd
     --writeFile "C:\\users\\liam\\desktop\\TTITest.txt" $ show standEVMap

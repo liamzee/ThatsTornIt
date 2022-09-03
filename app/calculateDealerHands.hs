@@ -2,13 +2,13 @@ module CalculateDealerHands where
 
 import CalculateTwoToAce (twoToAce)
 import CalculateTypes
-import Data.Sequence
-import qualified Data.Sequence as Sequ
+import Data.Vector ( Vector, snoc )
+import qualified Data.Vector as Vec
 import Control.Applicative (Applicative(liftA2))
 import CalculateHandValue (checkIfBust, checkForSoft17, handValueOf)
 
 
-dealerHands :: Seq (Seq Card)
+dealerHands :: Vector (Vector Card)
 dealerHands =
     appendToCore =<< dealerHandsCore
 
@@ -19,20 +19,21 @@ filterCheck hand =
 
 -}
 
-dealerHandsCore :: Seq (Seq Card)
+dealerHandsCore :: Vector (Vector Card)
 dealerHandsCore =
-    liftA2 ( (:|>) . pure ) twoToAce twoToAce
+    liftA2 ( snoc . pure ) twoToAce twoToAce
 
-    
-appendToCore :: Seq Card -> Seq (Seq Card)
+
+appendToCore :: Vector Card -> Vector (Vector Card)
 appendToCore hand
-    | 6 == Sequ.length hand || checkForSoft17 hand =
+    | 6 == Vec.length hand || checkForSoft17 hand =
         pure hand
     | otherwise =
         checkIfBustNewHand hand =<< twoToAce 
   where
+    checkIfBustNewHand :: Vector Card -> Card -> Vector (Vector Card)
     checkIfBustNewHand hand newCard =
-        let newHand = hand :|> newCard in
+        let newHand = hand `snoc` newCard in
         if checkIfBust newHand
             then pure newHand
             else appendToCore newHand

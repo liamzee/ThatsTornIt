@@ -2,33 +2,40 @@ module Parallelize where
     
 
 import Control.DeepSeq (NFData, force)
-import Main (gameStateList)
-import Data.Map.Lazy ( union, Map, fromSet )
+import Data.Map.Lazy ( union, Map, fromSet, fromList )
 import Control.Parallel.Strategies (runEval, rpar, rseq)
-import Data.Set (size, splitAt)
-import Types (BoardPosition)
+import qualified Data.Sequence as Sequ
+import CalculateTypes (BoardState, Card)
+import CalculateNonSplitBoardStates (allNonSplitBoardStates)
+import Data.Foldable (Foldable(toList))
+import Data.Sequence (Seq)
+import qualified Data.Set as Set
+import Data.Vector (Vector)
+
+target :: Set.Set (Vector Card, Card, Vector Card)
+target = Set.fromList $ toList allNonSplitBoardStates
 
 
-parallelize :: NFData a => (BoardPosition -> a) -> Map BoardPosition a
+parallelize :: NFData a => (BoardState -> a) -> Map BoardState a
 parallelize conversionFunction =
 
     runEval $ do
         let (set1, set2) =
-                Data.Set.splitAt (div (size gameStateList) 2) gameStateList
-        let (set11, set12) = Data.Set.splitAt (div (size set1) 2) set1
-        let (set21, set22) = Data.Set.splitAt (div (size set2) 2) set2
-        let (set111, set112) = Data.Set.splitAt (div (size set11) 2) set11
-        let (set121, set122) = Data.Set.splitAt (div (size set12) 2) set12
-        let (set211, set212) = Data.Set.splitAt (div (size set21) 2) set21
-        let (set221, set222) = Data.Set.splitAt (div (size set22) 2) set22
-        let (set1111, set1112) = Data.Set.splitAt (div (size set22) 2) set111
-        let (set1121, set1122) = Data.Set.splitAt (div (size set22) 2) set112
-        let (set1211, set1212) = Data.Set.splitAt (div (size set22) 2) set121
-        let (set1221, set1222) = Data.Set.splitAt (div (size set22) 2) set122
-        let (set2111, set2112) = Data.Set.splitAt (div (size set22) 2) set211
-        let (set2121, set2122) = Data.Set.splitAt (div (size set22) 2) set212
-        let (set2211, set2212) = Data.Set.splitAt (div (size set22) 2) set221
-        let (set2221, set2222) = Data.Set.splitAt (div (size set22) 2) set222
+                Set.splitAt (div (length target) 2) target
+        let (set11, set12) = Set.splitAt (div (length set1) 2) set1
+        let (set21, set22) = Set.splitAt (div (length set2) 2) set2
+        let (set111, set112) = Set.splitAt (div (length set11) 2) set11
+        let (set121, set122) = Set.splitAt (div (length set12) 2) set12
+        let (set211, set212) = Set.splitAt (div (length set21) 2) set21
+        let (set221, set222) = Set.splitAt (div (length set22) 2) set22
+        let (set1111, set1112) = Set.splitAt (div (length set22) 2) set111
+        let (set1121, set1122) = Set.splitAt (div (length set22) 2) set112
+        let (set1211, set1212) = Set.splitAt (div (length set22) 2) set121
+        let (set1221, set1222) = Set.splitAt (div (length set22) 2) set122
+        let (set2111, set2112) = Set.splitAt (div (length set22) 2) set211
+        let (set2121, set2122) = Set.splitAt (div (length set22) 2) set212
+        let (set2211, set2212) = Set.splitAt (div (length set22) 2) set221
+        let (set2221, set2222) = Set.splitAt (div (length set22) 2) set222
 
         map1111 <- rpar $ force $ fromSet conversionFunction set1111
         map1112 <- rpar $ force $ fromSet conversionFunction set1112
