@@ -11,8 +11,10 @@ import Data.Vector hiding (elem)
 import Data.Function ((&))
 import CalculateHandValue (handValueOf, checkIfBust)
 import CalculateProbabilityOfHand (calculateOddsOf)
-import Data.Map.Lazy ((!), Map)
+import Data.Map.Lazy ((!), Map, mapWithKey)
 import Parallelize (parallelize)
+import qualified Data.Foldable
+import CalculateDealerHandMaps (dealerHandMapFaceUp)
 
 
 -- Given a set of player cards, a dealer face up, and removed cards from
@@ -86,9 +88,7 @@ preProcessBoardStateForOddsCalculation
     (playerCards, dealerFaceUp, removedCards) =
         playerCards <> removedCards `snoc` dealerFaceUp 
 
-
 -- Filters away dealerHands that don't have the correct initial card.
-
 
 preFilterForDealerFaceUp :: Card -> Vector (Vector Card)
 preFilterForDealerFaceUp dealerFaceUp =
@@ -144,11 +144,47 @@ lossProbability boardState@(playerCards, dealerFaceUp, _)
         probabilityUnder boardState normalLossFilter
 
 -- a function to remove repeated use of filters in hands
-
+{-
 probabilityUnder :: BoardState -> (Vector Card -> Vector Card -> Bool) -> EV
 probabilityUnder boardState@(playerCards, dealerFaceUp, _) givenFilter =
     probabilityOfEvent boardState $ Vec.filter (givenFilter playerCards) $
         preFilterForDealerFaceUp dealerFaceUp
+-}
+{- experimental, for performance evaluation -}
+
+
+probabilityUnder :: BoardState -> (Vector Card -> Vector Card -> Bool) -> EV
+probabilityUnder boardState@(playerCards, dealerFaceUp, removedCards) givenFilter =
+    let numberOfCardsInPlay = Vec.length playerCards + Vec.length removedCards +1 
+        baseMap = dealerHandMapFaceUp dealerFaceUp numberOfCardsInPlay in
+    Data.Foldable.sum $ recalculateOdds boardState $ applyPreFilter (givenFilter playerCards) baseMap
+
+applyPreFilter :: (Vector Card -> Bool) -> Map (Vector Card) EV -> Map (Vector Card) EV
+applyPreFilter givenFilter baseMap =
+    mapWithKey preFilterInner baseMap
+  where
+    preFilterInner _ 0 = 0
+    preFilterInner cards eV
+        | givenFilter cards = eV
+        | otherwise = 0
+
+recalculateOdds boardState@(playerCards, _, removedCards) baseMap =
+    mapWithKey recalculateOddsInner baseMap
+  where
+    cardsInPlayWithoutDealerFaceUp =
+        playerCards <> removedCards
+
+    recalculateOddsInner _ 0 = 0
+    recalculateOddsInner cards eV
+        | Data.Foldable.any id $
+            (`elem` cardsInPlayWithoutDealerFaceUp) <$> cards =
+                recalculate cards
+        | otherwise = eV
+
+    recalculate cards =
+        calculateOddsOfDealerHand
+        (preProcessBoardStateForOddsCalculation boardState) cards
+
 
 -- the subsequent lines are filters for remaining dealerhands that 
 -- correspond to a player hand situation, producing both
