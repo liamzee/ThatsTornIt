@@ -1,61 +1,80 @@
+{-# LANGUAGE ApplicativeDo #-}
+
 module CalculateDealerHands where
 
 import CalculateTwoToAce (twoToAce)
-import CalculateTypes
-import Data.Vector ( Vector, snoc )
+import CalculateTypes (Card (..))
+import Data.Vector
+    ( Vector, snoc, toList,
+    modify, cons, empty )
 import qualified Data.Vector as Vec
 import Control.Applicative (Applicative(liftA2))
 import CalculateHandValue (checkIfBust, checkForSoft17, handValueOf)
+import Control.Arrow ((&&&))
+import Data.List (sort)
 
+-- | The collection of dealer hands, excluding bust dealer hands.
+-- Since we are not computing hands against which the player wins,
+-- using tie and loss to substitute for that, we don't have to calculate
+-- for that anymore, simplifying and reducing computational load.
 
 dealerHands :: Vector (Vector Card)
 dealerHands =
     appendToCore =<< dealerHandsCore
 
-{- used to test.
-
-filterCheck hand =
-    not (((not.checkForSoft17) hand && 6 /= Sequ.length hand) || checkIfBust hand || 6 < Sequ.length hand)
-
--}
+-- | All initial two-carded dealer hands, as permutations.
 
 dealerHandsCore :: Vector (Vector Card)
 dealerHandsCore =
     liftA2 ( snoc . pure ) twoToAce twoToAce
 
+-- | Used to transform dealerHandsCore recursively into all
+-- accessible, non-bust dealer hands.
 
 appendToCore :: Vector Card -> Vector (Vector Card)
 appendToCore hand
+
+-- If the hand is already length 6, we return it, if it's soft 17, we return it.
+-- This simulates the dealer strategy in our format, i.e, stand on soft 17.
+-- Otherwise, we try to append new cards, checking if bust (and returning empty
+-- in that case), using monadic bind to compress back to vectors.
+
     | 6 == Vec.length hand || checkForSoft17 hand =
         pure hand
-    | otherwise =
-        checkIfBustNewHand hand =<< twoToAce 
-  where
-    checkIfBustNewHand :: Vector Card -> Card -> Vector (Vector Card)
-    checkIfBustNewHand hand newCard =
-        let newHand = hand `snoc` newCard in
-        if checkIfBust newHand
-            then pure newHand
-            else appendToCore newHand
+    | otherwise =  do
+            newCard <- twoToAce
+            let newHand = hand `snoc` newCard
+            if checkIfBust newHand
+                then empty
+                else appendToCore newHand
 
-{-
-appendNew :: Seq (Seq Card) -> Seq (Seq Card)
-appendNew inputHands = do
-    oldHand <- inputHands
-    newCard <- twoToAce
-    pure $ oldHand :|> newCard
+-- | The actual dealer hands we prefer working with,
+-- with a count appended to each hand combination (with the
+-- first card being treated as a special case).
+-- By reducing permutations to combinations, we can majorly
+-- decrease the number of computations we need to do.
 
-dealerHands2 :: Seq (Seq Card)
-dealerHands2 = appendNew $ pure <$> twoToAce
+countedDealerHands :: Vector (Vector Card, Int)
+countedDealerHands =
+    makeNumber $ vectorSort $ internalSort <$> dealerHands
 
-dealerHands3 :: Seq (Seq Card)
-dealerHands3 = appendNew dealerHands2
+-- | Somehow, this outperforms directly using modify and
+-- a sorting algorithm on the vector.
 
-dealerHands4 :: Seq (Seq Card)
-dealerHands4 = appendNew dealerHands3
+vectorSort :: Ord a => Vector a -> Vector a
+vectorSort = Vec.fromList . sort . toList
 
-dealerHands5 :: Seq (Seq Card)
-dealerHands5 = appendNew dealerHands4
+-- | Sorts every card after the first of a vector. This is needed
+-- because of the face-up shenanigans we're using.
 
-dealerHands6 :: Seq (Seq Card)
-dealerHands6 = appendNew dealerHands5-}
+internalSort :: Vector Card -> Vector Card
+internalSort hand =
+    cons (hand Vec.! 0) (vectorSort . Vec.tail $ hand)
+
+-- | The actual function that makes numbers, using group to group
+-- the pre-sorted vectors, fanout to create the vector and its length.
+-- Will cause problems if you have empty groups.
+
+--simplified and more readable version, courtesy FP discord.
+makeNumber :: Eq a => Vector a -> Vector (a, Int)
+makeNumber = Vec.fromList . fmap (Vec.head &&& Vec.length) . Vec.group

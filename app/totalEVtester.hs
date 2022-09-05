@@ -1,10 +1,14 @@
-{-# LANGUAGE OverloadedLists #-}
 
-module GetTotalEV where
+module TotalEVTester where
+
 import Data.Vector (Vector, (!), fromList)
-import Main (Card (..), DealerFaceUp, EV, BoardPosition, tensCalc, otherCalc, dupe, Suggestion (suggestion), evaluateSplitDoubleSurrender, evaluateNoSplitDoubleSurrender, gameStateList)
-import qualified Data.Set
+import Data.Vector as Vec
 import Data.Bifunctor (bimap)
+import EvaluateActions (evaluateSplitDoubleSurrender, evaluateDoubleSurrender)
+import CalculateTypes (BoardState, Card (..), EV)
+import CalculateNonSplitBoardStates (allNonSplitBoardStates)
+import CalculateProbabilityOfHand (calculateOddsOf)
+import Control.Arrow ((&&&))
 
 --Going to peek ahead and compute EV, just to set up a system of tests.
 --Currently, this test is failing substantially and is revealing an EV higher
@@ -12,40 +16,26 @@ import Data.Bifunctor (bimap)
 
 checkEVofGame :: Double
 checkEVofGame =
-    sum $
+    Vec.sum $
     uncurry (*) .
-    bimap probabilityOfStartingHandsSplitter applyApplicableEvaluation .
-    dupe <$>
+    (probabilityOfStartingHandsSplitter &&& applyApplicableEvaluation)
+    <$>
     listOfStartingHands
 
 
-applyApplicableEvaluation :: (Vector Card, DealerFaceUp) -> EV
-applyApplicableEvaluation boardState@(playerCards, dealerFaceUp)=
-    fst . suggestion $ case (playerCards Data.Vector.! 0 , playerCards Data.Vector.! 1) of
+applyApplicableEvaluation :: BoardState -> EV
+applyApplicableEvaluation boardState@(playerCards, dealerFaceUp, removedCards)=
+    fst  $ case (playerCards Data.Vector.! 0 , playerCards Data.Vector.! 1) of
         (a , b) | a == b ->  evaluateSplitDoubleSurrender boardState
-        _ -> evaluateNoSplitDoubleSurrender boardState
+        _ -> evaluateDoubleSurrender boardState
 
 
-listOfStartingHands :: Vector (Vector Card, Card)
-listOfStartingHands =  Data.Vector.fromList . Data.Set.toList $ Data.Set.filter ((==2).length.fst) gameStateList
+listOfStartingHands :: Vector BoardState
+listOfStartingHands =  Vec.filter ((==2). Vec.length . (\(a,b,c) -> a)) allNonSplitBoardStates
 
 
-probabilityOfStartingHandsSplitter :: BoardPosition -> Double
-probabilityOfStartingHandsSplitter boardPosition@(playerCards, dealerFaceUp) =
+probabilityOfStartingHandsSplitter :: BoardState -> Double
+probabilityOfStartingHandsSplitter boardState@(playerCards, dealerFaceUp, removedCards) =
     case (playerCards Data.Vector.! 0 , playerCards Data.Vector.! 1) of
-        (a , b) | a == b -> probabilityOfStartingHands boardPosition
-        _ -> 2 * probabilityOfStartingHands boardPosition
-
-
-probabilityOfStartingHands :: BoardPosition -> Double
-probabilityOfStartingHands boardPosition@(playerCards, dealerFaceUp) =
-    internalSplitter (playerCards Data.Vector.! 0) [] *
-    internalSplitter (playerCards Data.Vector.! 1) [playerCards Data.Vector.! 0] *
-    internalSplitter dealerFaceUp playerCards
-
-  where
-
-    internalSplitter TenJackQueenKing cardsInPlay =
-        tensCalc cardsInPlay
-    internalSplitter other cardsInPlay =
-        otherCalc cardsInPlay other
+        (a , b) | a == b -> calculateOddsOf empty (snoc playerCards dealerFaceUp) 1
+        _ -> 2 * calculateOddsOf empty (snoc playerCards dealerFaceUp) 1

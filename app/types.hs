@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveAnyClass, DeriveGeneric #-}
+{-# LANGUAGE DeriveAnyClass, DeriveGeneric, DerivingStrategies #-}
 module Types where
 import GHC.Generics (Generic)
 import Control.Parallel.Strategies (NFData)

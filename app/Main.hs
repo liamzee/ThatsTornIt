@@ -38,14 +38,15 @@ import Data.Vector ( Vector, generate, (!), modify,
     empty, cons, snoc, last,
     null, splitAt, init, length,
     sum, tail, filter, unfoldrExactN,
-    toList, (//), head, elem, thaw, freeze, fromList, partition, maximum)
+    toList, (//), head, elem, thaw, freeze, fromList, partition, maximum,
+    fromList)
 import Prelude hiding (head, map, sum, null, length, last,
     splitAt, init, tail, filter)
 import Criterion.Main ()
 import Control.DeepSeq ( NFData, force, deepseq )
 import Control.Parallel.Strategies ( NFData, rpar, rseq, runEval )
 import Control.Monad ((<=<), (>=>), join)
-import Data.Map.Lazy ( Map, fromSet, union, (!), fromList )
+import Data.Map.Lazy ( Map, fromSet, union, (!), fromList, foldl' )
 import Data.Set
     ( filter,
       fromAscList,
@@ -64,11 +65,16 @@ import Control.Arrow ( Arrow(first, second) )
 import Data.Functor ((<&>))
 import Data.Bifunctor (bimap)
 import Data.Map (fold)
-import Data.Map.Lazy (foldl')
 import ProbabilityCalculator (probabilityOfEventCalculator)
 import Types
 import qualified CalculateStand
 import qualified CalculateTypes as CT
+import CalculateStand (calculateStand)
+import qualified Parallelize
+import Data.Coerce (coerce)
+import Unsafe.Coerce
+import EvaluateActions (evaluateHitStand, calculateDouble, calculateSplit, evaluateSplitDoubleSurrender)
+import TotalEVTester (checkEVofGame)
 
 pattern Tens = CT.TenJackQueenKing
 
@@ -79,11 +85,11 @@ pattern Tens = CT.TenJackQueenKing
 main :: IO ()
 main = do
     print =<< getCurrentTime
-    print (CalculateStand.calculateStand ([CT.Two,CT.Five],Tens,[]))
---    print checkEVofGame
+    print TotalEVTester.checkEVofGame
+    print $ EvaluateActions.calculateSplit (Data.Vector.fromList [CT.Nine,CT.Nine],CT.Nine,empty)
 --    tfd <- saveFileDialog "" "" [""] "" <&> (unpack . fromMaybe "")
 --    writeJSONOutput tfd
-    --writeFile "C:\\users\\liam\\desktop\\TTITest.txt" $ show standEVMap
+    writeFile "C:\\Users\\Liam\\Desktop\\TTItest5.txt" (show standEVMap2)
     print =<< getCurrentTime
 
 -- | list of all ranks in Vector form used for combination creation.
@@ -281,7 +287,7 @@ dealerHandNotSix =
 
 dealerHand21WithoutNatural :: Vector (Vector Card)
 dealerHand21WithoutNatural =
-    Data.Vector.filter (`notElem` dealerHandNatural) $
+    Data.Vector.filter (`Prelude.notElem` dealerHandNatural) $
     Data.Vector.filter ( (==21) . cardsValueOf ) dealerHandNotSix
 
 
@@ -648,6 +654,8 @@ dealerProbabilityMap6 = Data.Map.Lazy.fromSet checkProbability (Data.Set.fromLis
             fromIntegral
             (410 - length cardsInPlay)
 
+standEVMap2 :: Map CT.BoardState CT.EV
+standEVMap2 = Parallelize.parallelize calculateStand
 
 standEVMap :: Map (Vector Card, Card) EV
 standEVMap = parallelize calculateStandEV
@@ -821,12 +829,18 @@ evaluateHitOrStand boardState =
 hitOrStandMap :: Map BoardPosition Suggestion
 hitOrStandMap = parallelize evaluateHitOrStandInner
 
-
 evaluateHitOrStandInner :: (Vector Card, Card) -> Suggestion
-evaluateHitOrStandInner boardState@(playerCards, dealerFaceUp) =
+evaluateHitOrStandInner boardState@(playerCards, dealerFaceUp) |
+    6 == length playerCards =
+        Suggestion (standEVMap Data.Map.Lazy.! boardState, Stand)
+    | otherwise =
     Suggestion $
-    max (standEVMap Data.Map.Lazy.! boardState, Stand)
+    max ((standEVMap Data.Map.Lazy.! boardState), Stand)
         (evaluateHit boardState, Hit)
+
+boardPositionToBoardState :: (Vector Card, Card) -> (Vector CT.Card, CT.Card, Vector a3)
+boardPositionToBoardState (hand, dealerFaceUp) =
+    (unsafeCoerce hand :: Vector CT.Card, unsafeCoerce dealerFaceUp :: CT.Card, empty)
 
 
 evaluateHit :: (Vector Card, Card) -> EV
@@ -890,7 +904,7 @@ evaluateDoubleAction (playerCards, dealerFaceUp) =
         uncurry (*) .
         fmap
         (
-            (standEVMap Data.Map.Lazy.!) .
+            (standEVMap Data.Map.Lazy.!).
             (, dealerFaceUp) .
             Data.Vector.fromList . sort . Data.Vector.toList
         )
@@ -1005,7 +1019,7 @@ checkEVofGame =
 applyApplicableEvaluation :: (Vector Card, DealerFaceUp) -> EV
 applyApplicableEvaluation boardState@(playerCards, dealerFaceUp)=
     fst . suggestion $ case (playerCards Data.Vector.! 0 , playerCards Data.Vector.! 1) of
-        (a , b) | a == b ->  evaluateSplitDoubleSurrender boardState
+        (a , b) | a == b ->  Main.evaluateSplitDoubleSurrender boardState
         _ -> evaluateNoSplitDoubleSurrender boardState
 
 
@@ -1090,7 +1104,7 @@ makeAnnotatedSuggestions boardPosition
         [(HitStandOnly, evaluateHitOrStand boardPosition, ())]
     | fst boardPosition Data.Vector.! 0 == fst boardPosition Data.Vector.! 1 =
         [
-            (ActionsSplitSurrenderDouble, evaluateSplitDoubleSurrender boardPosition, ()),
+            (ActionsSplitSurrenderDouble, Main.evaluateSplitDoubleSurrender boardPosition, ()),
             (ActionsDouble, evaluateNoSplitDoubleSurrender boardPosition, ()),
             (HitStandOnly, evaluateHitOrStand boardPosition, ())
         ]
