@@ -86,7 +86,6 @@ main :: IO ()
 main = do
     print =<< getCurrentTime
     print TotalEVTester.checkEVofGame
-    print $ EvaluateActions.calculateSplit (Data.Vector.fromList [CT.Nine,CT.Nine],CT.Nine,empty)
 --    tfd <- saveFileDialog "" "" [""] "" <&> (unpack . fromMaybe "")
 --    writeJSONOutput tfd
     writeFile "C:\\Users\\Liam\\Desktop\\TTItest5.txt" (show standEVMap2)

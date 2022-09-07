@@ -7,20 +7,23 @@ import CalculateTypes
       BoardState,
       EVAction, EV )
 import CalculateStand
-    ( calculateStand, boardStateToCardsInPlay )
+    ( calculateStand )
 import qualified Data.Vector as Vec
 import Data.Vector (Vector, snoc, modify, slice)
 import CalculateHandValue (checkIfBust)
 import CalculateTwoToAce (twoToAce)
 import Control.Arrow ((&&&))
-import CalculateProbabilityOfHand (calculateOddsOf)
+import CalculateProbabilityOfHand (calculateOddsOf, boardStateToCardsInPlay)
 import Data.Foldable (Foldable(toList))
 import Debug.Trace (traceShowId)
 import Data.Vector.Algorithms.Intro (sort)
-import Data.Map (Map)
+import Data.Map.Lazy (Map, fromSet)
 import qualified Data.Map.Lazy
-import Parallelize (parallelize, parallelizeLazy)
+import Parallelize (parallelizeLazy, parallelize, parallelFromSet, target)
 import qualified Data.List
+import CalculateNonSplitBoardStates (allNonSplitBoardStates)
+import qualified Data.Set as Set
+import Parallelize (parallelFromSetLazy)
 
 
 --Current probable errors in how double and split are calculated.
@@ -36,7 +39,7 @@ evaluateHitStand boardState =
 
 evaluateHitStandMap :: Map BoardState EVAction
 evaluateHitStandMap =
-    parallelizeLazy evaluateHitStandInner
+    fromSet evaluateHitStandInner target
 
 
 evaluateHitStandInner :: BoardState -> EVAction
@@ -119,6 +122,7 @@ surrender :: EVAction
 surrender = (-0.50, Surrender)
 
 -- note that this is a shoddy hack, i.e, it estimates the results based on a constant playerstate, instead of calculating precisely.
+-- also note that on the second split, it's been confirmed you can't split if you get the same cards again.
 calculateSplit :: BoardState -> EV
 calculateSplit boardState@(playerCards, dealerFaceUp, removedCards) = 
     Vec.sum 

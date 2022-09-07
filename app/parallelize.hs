@@ -2,7 +2,7 @@ module Parallelize where
     
 
 import Control.DeepSeq (NFData, force)
-import Data.Map.Lazy ( union, Map, fromSet, fromList )
+import Data.Map.Strict ( union, Map, fromSet, fromList )
 import Control.Parallel.Strategies (runEval, rpar, rseq, using, evalList, evalTuple2, r0, parList)
 import qualified Data.Sequence as Sequ
 import CalculateTypes (BoardState, Card)
@@ -19,12 +19,22 @@ import qualified Data.Map.Lazy as Map
 target :: Set.Set (Vector Card, Card, Vector Card)
 target = Set.fromList $ Vec.toList allNonSplitBoardStates
 
+--via FP discord, modified with force.
 parallelFromSet :: Ord a => Int -> (a -> b) -> Set a -> Map a b
 parallelFromSet chunkSize f s
+    | Set.size s <= chunkSize = 
+        force Map.fromList ([(a, f a) | a <- Set.toList s] `using` evalList (evalTuple2 r0 rseq))
+    | otherwise = 
+        force Map.unions (parallelFromSet chunkSize f <$> Set.splitRoot s `using` parList rseq)
+
+
+parallelFromSetLazy :: Ord a => Int -> (a -> b) -> Set a -> Map a b
+parallelFromSetLazy chunkSize f s
     | Set.size s <= chunkSize = 
         Map.fromList ([(a, f a) | a <- Set.toList s] `using` evalList (evalTuple2 r0 rseq))
     | otherwise = 
         Map.unions (parallelFromSet chunkSize f <$> Set.splitRoot s `using` parList rseq)
+
 
 parallelize :: NFData a => (BoardState -> a) -> Map BoardState a
 parallelize conversionFunction =

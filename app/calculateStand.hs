@@ -10,13 +10,15 @@ import qualified Data.Vector as Vec hiding (elem)
 import Data.Vector hiding (elem)
 import Data.Function ((&))
 import CalculateHandValue (handValueOf, checkIfBust)
-import CalculateProbabilityOfHand (calculateOddsOf)
+import CalculateProbabilityOfHand
+    ( calculateOddsOf, boardStateToCardsInPlay )
 import Data.Map.Lazy ((!), Map, mapWithKey)
-import Parallelize (parallelize, target, parallelFromSet)
+import Parallelize (parallelize, target, parallelFromSet, parallelizeLazy)
 import qualified Data.Foldable
 import qualified Data.Set as Set
 import Control.Arrow (Arrow(first))
 import Data.Bifunctor (bimap)
+import CalculateNonSplitBoardStates (allNonSplitBoardStates)
 
 
 -- Given a set of player cards, a dealer face up, and removed cards from
@@ -87,12 +89,6 @@ calculateOddsOfDealerHand boardState assessedHand =
     calculateOddsOf (boardStateToCardsInPlay boardState)
         (Vec.tail assessedHand) 1
 
--- Combines preprocess boardstate for computation by calculateOddsOf.
-
-boardStateToCardsInPlay :: (Vector Card, Card, Vector Card) -> Vector Card
-boardStateToCardsInPlay (playerCards, dealerFaceUp, removedCards) =
-        playerCards <> removedCards `snoc` dealerFaceUp
-
 -- Filters away dealerHands that don't have the correct initial card.
 
 preFilterForDealerFaceUp :: Card -> Vector (Vector Card, Int)
@@ -102,13 +98,13 @@ preFilterForDealerFaceUp dealerFaceUp =
 -- The core function of this module.
 
 calculateStand :: BoardState -> EV
-calculateStand n = mapStandEV Data.Map.Lazy.! n
+calculateStand n = (mapStandEV Data.Map.Lazy.!) n
 
 --modified to use calculateStandInner' instead of calculateStandInner
 --during testing.
 
 mapStandEV :: Map BoardState EV
-mapStandEV = parallelize calculateStandInner
+mapStandEV = parallelFromSet 1827 calculateStandInner target
 
 {- attempt to use improved parallelize, which is at least more idiomatic and readable.
 mapStandEV = 
@@ -154,7 +150,7 @@ lossProbability boardState@(playerCards, dealerFaceUp, _)
     | otherwise =
         probabilityUnder boardState normalLossFilter
 
--- a function to remove repeated use of filters in hands
+-- a function to remove repeated use of filters in win / loss probability splitter.
 
 probabilityUnder :: BoardState -> (Vector Card -> Vector Card -> Bool) -> EV
 probabilityUnder boardState@(playerCards, dealerFaceUp, _) givenFilter =
