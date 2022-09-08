@@ -64,18 +64,21 @@ import Debug.Trace (trace, traceShowId)
 import Control.Arrow ( Arrow(first, second) )
 import Data.Functor ((<&>))
 import Data.Bifunctor (bimap)
-import Data.Map (fold)
+import Data.Map (fold, size)
 import ProbabilityCalculator (probabilityOfEventCalculator)
 import Types
 import qualified CalculateStand
 import qualified CalculateTypes as CT
-import CalculateStand (calculateStand)
+import CalculateStand (calculateStand, mapStandEV)
 import qualified Parallelize
 import Data.Coerce (coerce)
 import Unsafe.Coerce
 import EvaluateActions (evaluateHitStand, calculateDouble, calculateSplit, evaluateSplitDoubleSurrender)
 import TotalEVTester (checkEVofGame)
+import CalculateNonSplitBoardStates (allNonSplitBoardStates)
+import MakeAllValidBoardStatesSplit (realSnuff)
 
+pattern Tens :: CT.Card
 pattern Tens = CT.TenJackQueenKing
 
 --Rebuilt around 3 main memoizations, namely the
@@ -84,13 +87,11 @@ pattern Tens = CT.TenJackQueenKing
 
 main :: IO ()
 main = do
-    print =<< getCurrentTime
     print TotalEVTester.checkEVofGame
+    print $ Data.Map.size realSnuff
 --    tfd <- saveFileDialog "" "" [""] "" <&> (unpack . fromMaybe "")
 --    writeJSONOutput tfd
-    writeFile "C:\\Users\\Liam\\Desktop\\TTItest5.txt" (show standEVMap2)
-    print =<< getCurrentTime
-
+{-
 -- | list of all ranks in Vector form used for combination creation.
 
 twoToAce :: Vector Card
@@ -654,7 +655,7 @@ dealerProbabilityMap6 = Data.Map.Lazy.fromSet checkProbability (Data.Set.fromLis
             (410 - length cardsInPlay)
 
 standEVMap2 :: Map CT.BoardState CT.EV
-standEVMap2 = Parallelize.parallelize calculateStand
+standEVMap2 = Parallelize.parallelize allNonSplitBoardStates calculateStand
 
 standEVMap :: Map (Vector Card, Card) EV
 standEVMap = parallelize calculateStandEV
@@ -1113,3 +1114,5 @@ makeAnnotatedSuggestions boardPosition
             (ActionsDouble, evaluateNoSplitDoubleSurrender boardPosition, ()),
             (HitStandOnly, evaluateHitOrStand boardPosition, ())
         ]
+
+-}

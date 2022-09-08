@@ -9,21 +9,16 @@ import CalculateTypes
 import CalculateStand
     ( calculateStand )
 import qualified Data.Vector as Vec
-import Data.Vector (Vector, snoc, modify, slice)
+import Data.Vector (Vector, snoc, slice)
 import CalculateHandValue (checkIfBust)
 import CalculateTwoToAce (twoToAce)
 import Control.Arrow ((&&&))
 import CalculateProbabilityOfHand (calculateOddsOf, boardStateToCardsInPlay)
-import Data.Foldable (Foldable(toList))
-import Debug.Trace (traceShowId)
-import Data.Vector.Algorithms.Intro (sort)
-import Data.Map.Lazy (Map, fromSet)
-import qualified Data.Map.Lazy
-import Parallelize (parallelizeLazy, parallelize, parallelFromSet, target)
+import Data.Map.Lazy (Map)
+import qualified Data.Map.Lazy as Map
+import Parallelize (parallelizeLazy)
 import qualified Data.List
 import CalculateNonSplitBoardStates (allNonSplitBoardStates)
-import qualified Data.Set as Set
-import Parallelize (parallelFromSetLazy)
 
 
 --Current probable errors in how double and split are calculated.
@@ -34,12 +29,12 @@ import Parallelize (parallelFromSetLazy)
 
 evaluateHitStand :: BoardState -> EVAction
 evaluateHitStand boardState =
-    evaluateHitStandMap Data.Map.Lazy.! boardState
+    evaluateHitStandMap Map.! boardState
 
 
 evaluateHitStandMap :: Map BoardState EVAction
 evaluateHitStandMap =
-    fromSet evaluateHitStandInner target
+    parallelizeLazy allNonSplitBoardStates evaluateHitStandInner
 
 
 evaluateHitStandInner :: BoardState -> EVAction
@@ -72,7 +67,7 @@ checkForBustCarrier function boardState@(playerCards,_,_)=
 sortPlayerCards :: BoardState -> BoardState
 sortPlayerCards (playerCards, dealerFaceUp, removedCards) =
     (
-        Vec.fromList . Data.List.sort . toList $
+        Vec.fromList . Data.List.sort . Vec.toList $
             playerCards,
         dealerFaceUp,
         removedCards
@@ -81,7 +76,7 @@ sortPlayerCards (playerCards, dealerFaceUp, removedCards) =
 
 appendNewCard :: BoardState -> Vector BoardState
 appendNewCard boardState@(playerCards, dealerFaceUp, removedCards) =
-    (,dealerFaceUp,removedCards) <$> (snoc playerCards <$> twoToAce)
+    (,dealerFaceUp,removedCards) . snoc playerCards <$> twoToAce
 
 
 calculateOddsOfNewCard :: BoardState -> BoardState -> Double

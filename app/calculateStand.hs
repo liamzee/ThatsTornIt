@@ -8,15 +8,12 @@ import CalculateTypes (BoardState, EV, Card (..))
 import CalculateDealerHands
 import qualified Data.Vector as Vec hiding (elem)
 import Data.Vector hiding (elem)
-import Data.Function ((&))
-import CalculateHandValue (handValueOf, checkIfBust)
+import CalculateHandValue (handValueOf)
 import CalculateProbabilityOfHand
     ( calculateOddsOf, boardStateToCardsInPlay )
-import Data.Map.Lazy ((!), Map, mapWithKey)
-import Parallelize (parallelize, target, parallelFromSet, parallelizeLazy)
-import qualified Data.Foldable
+import Data.Map.Lazy ((!), Map)
+import Parallelize (parallelize)
 import qualified Data.Set as Set
-import Control.Arrow (Arrow(first))
 import Data.Bifunctor (bimap)
 import CalculateNonSplitBoardStates (allNonSplitBoardStates)
 
@@ -98,13 +95,13 @@ preFilterForDealerFaceUp dealerFaceUp =
 -- The core function of this module.
 
 calculateStand :: BoardState -> EV
-calculateStand n = (mapStandEV Data.Map.Lazy.!) n
+calculateStand boardState = mapStandEV Data.Map.Lazy.! boardState
 
 --modified to use calculateStandInner' instead of calculateStandInner
 --during testing.
 
 mapStandEV :: Map BoardState EV
-mapStandEV = parallelFromSet 1827 calculateStandInner target
+mapStandEV = parallelize allNonSplitBoardStates calculateStandInner 
 
 {- attempt to use improved parallelize, which is at least more idiomatic and readable.
 mapStandEV = 
@@ -124,7 +121,7 @@ calculateStandInner boardState@(playerCards, _, _) =
 
 eVWin :: Vector Card -> Double
 eVWin playerCards
-    | playerCards & isNatural =
+    | isNatural playerCards =
         1.5
     | otherwise = 1
 
@@ -132,7 +129,7 @@ eVWin playerCards
 
 tieProbability :: BoardState -> Double
 tieProbability boardState@(playerCards, dealerFaceUp, _)
-    | playerCards & isNatural =
+    | isNatural playerCards =
         probabilityUnder boardState naturalTieFilter
     | 6 == Vec.length playerCards =
         probabilityUnder boardState sixCardCharlieTieFilter
@@ -143,7 +140,7 @@ tieProbability boardState@(playerCards, dealerFaceUp, _)
 
 lossProbability :: BoardState -> Double
 lossProbability boardState@(playerCards, dealerFaceUp, _)
-    | playerCards & isNatural =
+    | isNatural playerCards =
         0
     | 6 == Vec.length playerCards =
         probabilityUnder boardState sixCardCharlieLossFilter

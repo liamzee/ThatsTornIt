@@ -1,11 +1,14 @@
+{-# LANGUAGE ViewPatterns #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Eta reduce" #-}
 module Parallelize where
     
 
 import Control.DeepSeq (NFData, force)
-import Data.Map.Strict ( union, Map, fromSet, fromList )
+import Data.Map.Lazy ( union, Map, fromSet, fromList )
 import Control.Parallel.Strategies (runEval, rpar, rseq, using, evalList, evalTuple2, r0, parList)
 import qualified Data.Sequence as Sequ
-import CalculateTypes (BoardState, Card)
+import CalculateTypes (BoardState, Card, EV, EVAction)
 import CalculateNonSplitBoardStates (allNonSplitBoardStates)
 import Data.Foldable (Foldable(toList))
 import Data.Sequence (Seq)
@@ -16,28 +19,18 @@ import qualified Data.Vector as Vec
 import qualified Data.Map.Lazy as Map
 
 
-target :: Set.Set (Vector Card, Card, Vector Card)
-target = Set.fromList $ Vec.toList allNonSplitBoardStates
+convertTarget :: Vector BoardState -> Set BoardState
+convertTarget boardState = Set.fromList . Vec.toList $ boardState 
 
---via FP discord, modified with force.
 parallelFromSet :: Ord a => Int -> (a -> b) -> Set a -> Map a b
 parallelFromSet chunkSize f s
-    | Set.size s <= chunkSize = 
-        force Map.fromList ([(a, f a) | a <- Set.toList s] `using` evalList (evalTuple2 r0 rseq))
-    | otherwise = 
-        force Map.unions (parallelFromSet chunkSize f <$> Set.splitRoot s `using` parList rseq)
-
-
-parallelFromSetLazy :: Ord a => Int -> (a -> b) -> Set a -> Map a b
-parallelFromSetLazy chunkSize f s
     | Set.size s <= chunkSize = 
         Map.fromList ([(a, f a) | a <- Set.toList s] `using` evalList (evalTuple2 r0 rseq))
     | otherwise = 
         Map.unions (parallelFromSet chunkSize f <$> Set.splitRoot s `using` parList rseq)
 
-
-parallelize :: NFData a => (BoardState -> a) -> Map BoardState a
-parallelize conversionFunction =
+parallelize :: Vector BoardState -> (BoardState -> EV) -> Map BoardState EV
+parallelize (convertTarget -> target) conversionFunction =
 
     runEval $ do
         let (set1, set2) =
@@ -89,8 +82,8 @@ parallelize conversionFunction =
 
 
 
-parallelizeLazy :: NFData a => (BoardState -> a) -> Map BoardState a
-parallelizeLazy conversionFunction =
+parallelizeLazy :: NFData a => Vector BoardState -> (BoardState -> a) -> Map BoardState a
+parallelizeLazy (convertTarget -> target) conversionFunction =
 
     runEval $ do
         let (set1, set2) =
@@ -101,47 +94,25 @@ parallelizeLazy conversionFunction =
         let (set121, set122) = Set.splitAt (div (length set12) 2) set12
         let (set211, set212) = Set.splitAt (div (length set21) 2) set21
         let (set221, set222) = Set.splitAt (div (length set22) 2) set22
-        let (set1111, set1112) = Set.splitAt (div (length set22) 2) set111
-        let (set1121, set1122) = Set.splitAt (div (length set22) 2) set112
-        let (set1211, set1212) = Set.splitAt (div (length set22) 2) set121
-        let (set1221, set1222) = Set.splitAt (div (length set22) 2) set122
-        let (set2111, set2112) = Set.splitAt (div (length set22) 2) set211
-        let (set2121, set2122) = Set.splitAt (div (length set22) 2) set212
-        let (set2211, set2212) = Set.splitAt (div (length set22) 2) set221
-        let (set2221, set2222) = Set.splitAt (div (length set22) 2) set222
 
-        map1111 <- rpar $ fromSet conversionFunction set1111
-        map1112 <- rpar $ fromSet conversionFunction set1112
-        map1121 <- rpar $ fromSet conversionFunction set1121
-        map1122 <- rpar $ fromSet conversionFunction set1122
+        map1111 <- rpar $ fromSet conversionFunction set111
+        map1112 <- rpar $ fromSet conversionFunction set112
+        map1121 <- rpar $ fromSet conversionFunction set121
+        map1122 <- rpar $ fromSet conversionFunction set122
 
-        map1211 <- rpar $ fromSet conversionFunction set1211
-        map1212 <- rpar $ fromSet conversionFunction set1212
-        map1221 <- rpar $ fromSet conversionFunction set1221
-        map1222 <- rpar $ fromSet conversionFunction set1222
-
-        map2111 <- rpar $ fromSet conversionFunction set2111
-        map2112 <- rpar $ fromSet conversionFunction set2112
-        map2121 <- rpar $ fromSet conversionFunction set2121
-        map2122 <- rpar $ fromSet conversionFunction set2122
-
-        map2211 <- rpar $ fromSet conversionFunction set2211
-        map2212 <- rpar $ fromSet conversionFunction set2212
-        map2221 <- rpar $ fromSet conversionFunction set2221
-        map2222 <- rpar $ fromSet conversionFunction set2222
+        map1211 <- rpar $ fromSet conversionFunction set211
+        map1212 <- rpar $ fromSet conversionFunction set212
+        map1221 <- rpar $ fromSet conversionFunction set221
+        map1222 <- rpar $ fromSet conversionFunction set222
         
 
         rseq map1111 >> rseq map1112 >> rseq map1121 >> rseq map1122
         rseq map1211 >> rseq map1212 >> rseq map1221 >> rseq map1222
-        rseq map2111 >> rseq map2112 >> rseq map2121 >> rseq map2122
-        rseq map2211 >> rseq map2212 >> rseq map2221 >> rseq map2222
-        pure $ (((map1111 `union` map1112) `union` (map1121 `union` map1122)) `union`
-            (map1211 `union` map1212) `union` (map1221 `union` map1222)) `union`
-            (((map2111 `union` map2112) `union` (map2121 `union` map2122)) `union`
-            ((map2211 `union` map2212) `union` (map2221 `union` map2222)))
+        pure $ ((map1111 `union` map1112) `union` (map1121 `union` map1122)) `union`
+            (map1211 `union` map1212) `union` (map1221 `union` map1222)
 
 
-parallelizeDealerHandMap :: NFData a => Vector (Vector Card) -> (Vector Card -> a) -> Map (Vector Card) a
+parallelizeDealerHandMap :: Vector (Vector Card) -> (Vector Card -> EVAction) -> Map (Vector Card) EVAction
 parallelizeDealerHandMap inputArray conversionFunction =
     let inputArray2 = Set.fromList $ Data.Foldable.toList inputArray in
 

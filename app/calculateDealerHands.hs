@@ -12,7 +12,6 @@ import Control.Applicative (Applicative(liftA2))
 import CalculateHandValue (checkIfBust, checkForSoft17, handValueOf)
 import Control.Arrow ((&&&))
 import Data.List (sort)
-import Control.Parallel.Strategies (runEval, rpar, rseq)
 
 -- | The collection of dealer hands, excluding bust dealer hands.
 -- Since we are not computing hands against which the player wins,

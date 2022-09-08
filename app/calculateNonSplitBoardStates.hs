@@ -11,8 +11,6 @@ import CalculateHandValue (checkIfBust)
 import Data.Foldable (Foldable(toList))
 import Data.Set
 import qualified Data.Map.Lazy as Map
-import Control.Parallel.Strategies (using, parList, rseq, evalList, r0)
-import Control.Monad (join)
 
 -- Should be modified to generate Set by default, reduce computation somewhat.
 
