@@ -31,11 +31,14 @@ evaluateHitStand :: BoardState -> EVAction
 evaluateHitStand boardState =
     evaluateHitStandMap Map.! boardState
 
+--The memoization of the algorithm run on all valid states.
 
 evaluateHitStandMap :: Map BoardState EVAction
 evaluateHitStandMap =
     parallelizeLazy allNonSplitBoardStates evaluateHitStandInner
 
+--Note that evaluateHitStandInner effectively calls itself, via evaluateHitStand
+--It introduces a base-state explicitly, which helps to limit the number of computations required.
 
 evaluateHitStandInner :: BoardState -> EVAction
 evaluateHitStandInner boardState@(playerHands, _, _)
@@ -44,6 +47,7 @@ evaluateHitStandInner boardState@(playerHands, _, _)
     | otherwise =
         max (calculateHit boardState, Hit) (calculateStand boardState, Stand)
 
+--CalculateHit starts by running appendNewCard, then appends
 
 calculateHit :: BoardState -> EV
 calculateHit boardState@(playerHand, dealerFaceUp, removedCards) =
@@ -125,7 +129,7 @@ calculateSplit boardState@(playerCards, dealerFaceUp, removedCards) =
         uncurry (*) .
         (
             calculateOddsOfNewCard
-                (slice 0 1 playerCards, dealerFaceUp, slice 1 1 playerCards)
+                (playerCards, dealerFaceUp, removedCards)
                 &&&
                 checkForBustCarrier evaluateDoubleSurrender
         )
@@ -138,7 +142,7 @@ calculateSplit boardState@(playerCards, dealerFaceUp, removedCards) =
         uncurry (*) .
         (
             calculateOddsOfNewCard
-                (slice 0 1 playerCards, dealerFaceUp, slice 1 1 playerCards)
+                (playerCards, dealerFaceUp, removedCards)
                 &&&
                 checkForBustCarrier evaluateDouble
         )

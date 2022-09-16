@@ -75,7 +75,6 @@ import Data.Coerce (coerce)
 import Unsafe.Coerce
 import EvaluateActions (evaluateHitStand, calculateDouble, calculateSplit, evaluateSplitDoubleSurrender)
 import TotalEVTester (checkEVofGame)
-import CalculateNonSplitBoardStates (allNonSplitBoardStates)
 import MakeAllValidBoardStatesSplit (realSnuff)
 
 pattern Tens :: CT.Card

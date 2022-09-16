@@ -8,10 +8,11 @@ import Data.List (sort)
 import Parallelize (parallelize)
 import CalculateStand (calculateStandInner)
 import qualified Data.Map.Lazy as Data.Map.Internal
+import Debug.Trace (traceShowId)
 
 
 realSnuff :: Data.Map.Internal.Map BoardState CalculateTypes.EV
-realSnuff = parallelize (kraken =<< allNonSplitBoardStates) calculateStandInner
+realSnuff = parallelize (kraken =<< allNonSplitBoardStates) (calculateStandInner . traceShowId)
 snuff = Data.Vector.length top
 
 top :: Vector (Vector Card)
@@ -26,4 +27,4 @@ appendDealer (playerCards, dealerFaceUp, removedCards) = do
 kraken :: BoardState -> Vector BoardState
 kraken boardState@(playerCards, dealerFaceUp, _) = do
     elem <- top
-    pure (playerCards, dealerFaceUp, elem)
+    pure $ traceShowId (playerCards, dealerFaceUp, elem)
