@@ -12,7 +12,7 @@ import Debug.Trace (traceShowId)
 
 
 realSnuff :: Data.Map.Internal.Map BoardState CalculateTypes.EV
-realSnuff = parallelize (kraken =<< allNonSplitBoardStates) (calculateStandInner . traceShowId)
+realSnuff = parallelize (kraken =<< allNonSplitBoardStates) ((calculateStandInner) . traceShowId)
 snuff = Data.Vector.length top
 
 top :: Vector (Vector Card)

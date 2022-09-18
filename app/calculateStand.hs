@@ -101,7 +101,7 @@ calculateStand boardState = mapStandEV Data.Map.Lazy.! boardState
 --during testing.
 
 mapStandEV :: Map BoardState EV
-mapStandEV = parallelize allNonSplitBoardStates calculateStandInner 
+mapStandEV = parallelize allNonSplitBoardStates (calculateStandInner) 
 
 {- attempt to use improved parallelize, which is at least more idiomatic and readable.
 mapStandEV = 
@@ -110,12 +110,23 @@ mapStandEV =
 
 calculateStandInner :: BoardState -> EV
 calculateStandInner boardState@(playerCards, _, _) =
-    (eVWin playerCards *
-    (1 - tieProbability boardState - lossProbability boardState))
+
+    let winProbability =
+            1 - tieProbability boardState - lossProbability boardState
+        evLoss = -1 in
+
+    eVWin playerCards *
+    winProbability
+
     +
-    (-1 *
-    lossProbability boardState
+
+    evLoss *
+    lossProbability boardState{-,
+    (
+        winProbability,
+        lossProbability boardState
     )
+    )-}
 
 -- If natural, then the EV return on win is 1.5.
 
