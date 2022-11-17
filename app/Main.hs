@@ -2,19 +2,9 @@
 {-# LANGUAGE OverloadedLists, DeriveGeneric, DeriveAnyClass #-}
 {-# LANGUAGE ViewPatterns, TupleSections, ApplicativeDo #-}
 
-{-This file, at least for now, is going to be done as a single module.
-Comments like these will split up the parts of the module, it's not good
-design, but I've lost my confidence in the inliner.
+{- Currently requires clean-up to move to the new algorithm. -}
 
-The existence of shared functions also makes it somewhat harder
-to understand the organization of program, which probably
-led to substantial bugs with previous iterations.-}
-
-{-
-    So far, there are a few key painpoints that need to be verified.
-    First, are the various probability calculators correct?
-    Second, are the generators for cards correct?
--}
+{- Split calculation is also hashed, and hence requires fixing. -}
 
 {- 
 
@@ -69,13 +59,12 @@ import ProbabilityCalculator (probabilityOfEventCalculator)
 import Types
 import qualified CalculateStand
 import qualified CalculateTypes as CT
-import CalculateStand (calculateStand, mapStandEV)
+import CalculateStand (calculateStand)
 import qualified Parallelize
 import Data.Coerce (coerce)
 import Unsafe.Coerce
 import EvaluateActions (evaluateHitStand, calculateDouble, calculateSplit, evaluateSplitDoubleSurrender)
 import TotalEVTester (checkEVofGame)
-import MakeAllValidBoardStatesSplit (realSnuff)
 import CalculateNonSplitBoardStates (allNonSplitBoardStates)
 
 
@@ -89,9 +78,10 @@ pattern Tens = CT.TenJackQueenKing
 main :: IO ()
 main = do
 --    print TotalEVTester.checkEVofGame
-    tfd <- saveFileDialog "" "" [""] "" <&> (unpack . fromMaybe "")
-    writeJSONOutput tfd
-
+    --tfd <- saveFileDialog "" "" [""] "" <&> (unpack . fromMaybe "")
+    print TotalEVTester.checkEVofGame
+    --writeJSONOutput "C:\\Users\\Liam\\Desktop\\gay.json"
+{-
 -- | list of all ranks in Vector form used for combination creation.
 
 twoToAce :: Vector Card
@@ -654,9 +644,6 @@ dealerProbabilityMap6 = Data.Map.Lazy.fromSet checkProbability (Data.Set.fromLis
             fromIntegral
             (410 - length cardsInPlay)
 
-standEVMap2 :: Map CT.BoardState CT.EV
-standEVMap2 = Parallelize.parallelize allNonSplitBoardStates calculateStand
-
 standEVMap :: Map (Vector Card, Card) EV
 standEVMap = parallelize calculateStandEV
 
@@ -1115,3 +1102,4 @@ makeAnnotatedSuggestions boardPosition
             (HitStandOnly, evaluateHitOrStand boardPosition, ())
         ]
 
+-}

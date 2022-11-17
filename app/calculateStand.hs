@@ -8,7 +8,7 @@ import CalculateTypes (BoardState, EV, Card (..))
 import CalculateDealerHands
 import qualified Data.Vector as Vec hiding (elem)
 import Data.Vector hiding (elem)
-import CalculateHandValue (handValueOf)
+import CalculateHandValue (handValueOf, checkIfBust, checkForSoft17)
 import CalculateProbabilityOfHand
     ( calculateOddsOf, boardStateToCardsInPlay )
 import Data.Map.Lazy ((!), Map)
@@ -16,6 +16,12 @@ import Parallelize (parallelize)
 import qualified Data.Set as Set
 import Data.Bifunctor (bimap)
 import CalculateNonSplitBoardStates (allNonSplitBoardStates)
+import qualified Data.Vector.Mutable as Vm
+import Control.Monad.ST (runST)
+import Data.Vector.Algorithms.Merge (sort)
+import Control.Arrow ((&&&))
+import CalculateTwoToAce (twoToAce)
+import Control.Applicative (liftA2)
 
 
 -- Given a set of player cards, a dealer face up, and removed cards from
@@ -84,7 +90,7 @@ probabilityOfEvent boardState listOfHands =
 calculateOddsOfDealerHand :: BoardState -> Vector Card -> Double
 calculateOddsOfDealerHand boardState assessedHand =
     calculateOddsOf (boardStateToCardsInPlay boardState)
-        (Vec.tail assessedHand) 1
+        (Vec.tail assessedHand)
 
 -- Filters away dealerHands that don't have the correct initial card.
 
@@ -96,74 +102,72 @@ preFilterForDealerFaceUp dealerFaceUp =
 
 calculateStand :: BoardState -> EV
 calculateStand boardState = mapStandEV Data.Map.Lazy.! boardState
-
+  where
 --modified to use calculateStandInner' instead of calculateStandInner
 --during testing.
 
-mapStandEV :: Map BoardState EV
-mapStandEV = parallelize allNonSplitBoardStates (calculateStandInner) 
+    mapStandEV :: Map BoardState EV
+    mapStandEV = parallelize (allNonSplitBoardStates Vec.empty) calculateStandInner
 
 {- attempt to use improved parallelize, which is at least more idiomatic and readable.
 mapStandEV = 
     parallelFromSet 10 calculateStandInner' (Set.fromList $ Data.Foldable.toList Parallelize.target)
 -}
 
-calculateStandInner :: BoardState -> EV
-calculateStandInner boardState@(playerCards, _, _) =
+    calculateStandInner :: BoardState -> EV
+    calculateStandInner boardState@(playerCards, dealerFaceUp, removedCards) =
 
-    let winProbability =
-            1 - tieProbability boardState - lossProbability boardState
-        evLoss = -1 in
+            eVWin
+        *   winProbability
+        +
+            evLoss
+        *   lossProbability
 
-    eVWin playerCards *
-    winProbability
+      where
 
-    +
-
-    evLoss *
-    lossProbability boardState{-,
-    (
-        winProbability,
-        lossProbability boardState
-    )
-    )-}
-
+        winProbability :: Double
+        winProbability =
+            1 - tieProbability - lossProbability
+    
+        evLoss :: Double
+        evLoss = -1
+    
 -- If natural, then the EV return on win is 1.5.
 
-eVWin :: Vector Card -> Double
-eVWin playerCards
-    | isNatural playerCards =
-        1.5
-    | otherwise = 1
+        eVWin :: Double
+        eVWin 
+            | isNatural playerCards =
+                1.5
+            | otherwise = 1
 
 -- A splitter function to evaluate player cases.
 
-tieProbability :: BoardState -> Double
-tieProbability boardState@(playerCards, dealerFaceUp, _)
-    | isNatural playerCards =
-        probabilityUnder boardState naturalTieFilter
-    | 6 == Vec.length playerCards =
-        probabilityUnder boardState sixCardCharlieTieFilter
-    | otherwise =
-        probabilityUnder boardState normalTieFilter
+        tieProbability :: Double
+        tieProbability
+            | isNatural playerCards =
+                probabilityUnder naturalTieFilter
+            | 6 == Vec.length playerCards =
+                probabilityUnder sixCardCharlieTieFilter
+            | otherwise =
+                probabilityUnder normalTieFilter
 
 -- Basically a splitter function that feeds the boardState to a probabilityOfEvent calculator.
 
-lossProbability :: BoardState -> Double
-lossProbability boardState@(playerCards, dealerFaceUp, _)
-    | isNatural playerCards =
-        0
-    | 6 == Vec.length playerCards =
-        probabilityUnder boardState sixCardCharlieLossFilter
-    | otherwise =
-        probabilityUnder boardState normalLossFilter
+        lossProbability :: Double
+        lossProbability
+            | isNatural playerCards =
+                0
+            | 6 == Vec.length playerCards =
+                probabilityUnder sixCardCharlieLossFilter
+            | otherwise =
+                probabilityUnder normalLossFilter
 
 -- a function to remove repeated use of filters in win / loss probability splitter.
 
-probabilityUnder :: BoardState -> (Vector Card -> Vector Card -> Bool) -> EV
-probabilityUnder boardState@(playerCards, dealerFaceUp, _) givenFilter =
-    probabilityOfEvent boardState $ Vec.filter (givenFilter playerCards . fst) $
-        preFilterForDealerFaceUp dealerFaceUp
+        probabilityUnder :: (Vector Card -> Bool) -> EV
+        probabilityUnder givenFilter =
+            probabilityOfEvent boardState $ Vec.filter (givenFilter . fst) $
+                preFilterForDealerFaceUp dealerFaceUp
 
 -- the subsequent lines are filters for remaining dealerhands that 
 -- correspond to a player hand situation, producing both
@@ -171,41 +175,41 @@ probabilityUnder boardState@(playerCards, dealerFaceUp, _) givenFilter =
 
 -- | tie if there's a dealer natural.
 
-naturalTieFilter :: Vector Card -> Vector Card -> Bool
-naturalTieFilter playerCards item =
-    isNatural item
+        naturalTieFilter :: Vector Card -> Bool
+        naturalTieFilter item =
+            isNatural item
 
 -- | tie if the opponent has a six card charlie of equal value.
 
-sixCardCharlieTieFilter :: Vector Card -> Vector Card -> Bool
-sixCardCharlieTieFilter playerCards item =
-    6 == Vec.length item &&
-        handValueOf playerCards == handValueOf item
+        sixCardCharlieTieFilter :: Vector Card -> Bool
+        sixCardCharlieTieFilter item =
+            6 == Vec.length item &&
+                handValueOf playerCards == handValueOf item
 
 -- | lose if the dealer has a natural, or if the dealer has a six
 -- card charlie that doesn't bust and is of higher value than the
 -- player's
 
-sixCardCharlieLossFilter :: Vector Card -> Vector Card -> Bool
-sixCardCharlieLossFilter playerCards item =
-    isNatural item ||
-        6 == Vec.length item &&
-        handValueOf playerCards < handValueOf item
+        sixCardCharlieLossFilter :: Vector Card -> Bool
+        sixCardCharlieLossFilter item =
+            isNatural item ||
+                6 == Vec.length item &&
+            handValueOf playerCards < handValueOf item
 
 -- | tie if the opponent has a non-six card charlie hand,
 -- non-natural hand of equal value.
 
-normalTieFilter :: Vector Card -> Vector Card -> Bool
-normalTieFilter playerCards item =
-    not (isNatural item) &&
-        6 /= Vec.length item &&
-        handValueOf playerCards == handValueOf item
+        normalTieFilter :: Vector Card -> Bool
+        normalTieFilter item =
+            not (isNatural item) &&
+                6 /= Vec.length item &&
+                handValueOf playerCards == handValueOf item
 
 -- | lose if the dealer has a natural, a non-busting six card charlie,
 -- or a non-busting hand of higher value
 
-normalLossFilter :: Vector Card -> Vector Card -> Bool
-normalLossFilter playerCards item =
-    6 == Vec.length item ||
-      isNatural item ||
-      handValueOf playerCards < handValueOf item
+        normalLossFilter :: Vector Card -> Bool
+        normalLossFilter item =
+            6 == Vec.length item ||
+                isNatural item ||
+                handValueOf playerCards < handValueOf item

@@ -13,33 +13,42 @@ import CalculateTypes (Card (..))
 -- accumulator, and second, the cards in play have to be
 -- produced from a boardstate first.
 
-calculateOddsOf :: Vector Card -> Vector Card -> Double -> Double
-calculateOddsOf cardsInPlay (Vec.null -> True) acc = acc
-calculateOddsOf cardsInPlay inputVector acc =
-    let front = inputVector ! 0
-        rear = Vec.tail inputVector in
-    calculateOddsOf (cardsInPlay `snoc` front) rear
-            (calculateDrawChances cardsInPlay front * acc)
+calculateOddsOf :: Vector Card -> Vector Card -> Double
+calculateOddsOf cardsInPlay handToEvaluate =
+    go 1 indexInEvaluation
+  where
+    totalVector :: Vector Card
+    totalVector = cardsInPlay <> handToEvaluate
+
+    indexInEvaluation :: Int
+    indexInEvaluation = Vec.length cardsInPlay
+    
+    go :: Double -> Int -> Double
+    go acc index
+        | index == Vec.length totalVector = acc
+        | otherwise = go ((*) acc $! calculateDrawChances index) (index+1)
 
 -- | Fairly straightforward odds calculator for the odds of
 -- drawing a single card.
 
-calculateDrawChances :: Vector Card -> Card -> Double
-calculateDrawChances cardsInPlay card =
-    let baseNumberOfCards =
-            if card == TenJackQueenKing
-               then 128
-               else 32 in
-    fromIntegral
-    (
-        baseNumberOfCards -
-        Vec.length (Vec.filter (card==) cardsInPlay)
-    )
-    /
-    fromIntegral
-    (
-        416 - Vec.length cardsInPlay
-    )
+    calculateDrawChances :: Int -> Double
+    calculateDrawChances index =
+        let card = totalVector ! index
+            selectedVector = Vec.take index totalVector
+            baseNumberOfCards =
+                if card == TenJackQueenKing
+                   then 128
+                   else 32 in
+        fromIntegral
+        (
+            baseNumberOfCards -
+            Vec.length (Vec.filter (card ==) selectedVector)
+        )
+        /
+        fromIntegral
+        (
+            416 - Vec.length selectedVector
+        )
 
 -- Useful here, as it might be reused by multiple modules.
 

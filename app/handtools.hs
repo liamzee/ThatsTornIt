@@ -11,16 +11,15 @@ import Data.Vector
       unfoldrExactN,
       generate,
       cons,
-      snoc )
+      snoc,
+      last,
+      init )
 import Types (Card (..))
-import Data.Set ( Set, fromAscList, unions, singleton )
+import Data.Set ( Set, fromAscList, unions, singleton, map )
 import Data.Vector.Generic (modify)
 import Data.Vector.Generic.Mutable (write)
 import Prelude hiding
     (last, init, map)
-import Data.Vector (last)
-import Data.Vector (init)
-import Data.Set (map)
 
 
 -- | list of all ranks in Vector form used for combination creation.

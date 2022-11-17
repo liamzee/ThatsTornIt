@@ -7,18 +7,20 @@ import CalculateTypes
       BoardState,
       EVAction, EV )
 import CalculateStand
-    ( calculateStand )
+    ( calculateStand)
 import qualified Data.Vector as Vec
 import Data.Vector (Vector, snoc, slice)
 import CalculateHandValue (checkIfBust)
 import CalculateTwoToAce (twoToAce)
 import Control.Arrow ((&&&))
 import CalculateProbabilityOfHand (calculateOddsOf, boardStateToCardsInPlay)
-import Data.Map.Lazy (Map)
+import Data.Map.Lazy (Map, (!))
 import qualified Data.Map.Lazy as Map
 import Parallelize (parallelizeLazy)
 import qualified Data.List
 import CalculateNonSplitBoardStates (allNonSplitBoardStates)
+import Control.Monad.ST (runST)
+import Data.Vector.Algorithms.Merge (sort)
 
 
 --Current probable errors in how double and split are calculated.
@@ -30,35 +32,44 @@ import CalculateNonSplitBoardStates (allNonSplitBoardStates)
 evaluateHitStand :: BoardState -> EVAction
 evaluateHitStand boardState =
     evaluateHitStandMap Map.! boardState
-
+  where
 --The memoization of the algorithm run on all valid states.
 
-evaluateHitStandMap :: Map BoardState EVAction
-evaluateHitStandMap =
-    parallelizeLazy allNonSplitBoardStates evaluateHitStandInner
+    evaluateHitStandMap :: Map BoardState EVAction
+    evaluateHitStandMap =
+        parallelizeLazy (allNonSplitBoardStates Vec.empty) evaluateHitStandInner
 
 --Note that evaluateHitStandInner effectively calls itself, via evaluateHitStand
 --It introduces a base-state explicitly, which helps to limit the number of computations required.
 
 evaluateHitStandInner :: BoardState -> EVAction
-evaluateHitStandInner boardState@(playerHands, _, _)
+evaluateHitStandInner boardState@(playerHands, dealerFaceUp, removedCards)
     | 6 == length playerHands =
         (calculateStand boardState, Stand)
     | otherwise =
-        max (calculateHit boardState, Hit) (calculateStand boardState, Stand)
+        max (calculateHit, Hit) (calculateStand boardState, Stand)
+  where
 
 --CalculateHit starts by running appendNewCard, then appends
 
-calculateHit :: BoardState -> EV
-calculateHit boardState@(playerHand, dealerFaceUp, removedCards) =
-    Vec.sum $
-    uncurry (*) .
-    (
-        calculateOddsOfNewCard boardState &&&
+    calculateHit :: EV
+    calculateHit =
+        Vec.sum $
+        uncurry (*) .
+        (
+        calculateOddsOfNewCard &&&
         checkForBustCarrier evaluateHitStand
-    )
-    <$>
-    appendNewCard boardState
+        )
+        <$>
+        appendNewCard boardState
+
+    
+    calculateOddsOfNewCard :: BoardState -> Double
+    calculateOddsOfNewCard
+        newBoardState@(newPlayerHand, dealerFaceUp, removedCards) =
+            calculateOddsOf (boardStateToCardsInPlay boardState)
+                (pure $ Vec.last newPlayerHand)
+
 
 
 checkForBustCarrier :: (BoardState -> EVAction) -> BoardState -> EV
@@ -71,8 +82,10 @@ checkForBustCarrier function boardState@(playerCards,_,_)=
 sortPlayerCards :: BoardState -> BoardState
 sortPlayerCards (playerCards, dealerFaceUp, removedCards) =
     (
-        Vec.fromList . Data.List.sort . Vec.toList $
-            playerCards,
+        runST $ do
+            mvec <- Vec.thaw playerCards
+            sort mvec
+            Vec.freeze mvec,
         dealerFaceUp,
         removedCards
     )
@@ -88,7 +101,7 @@ calculateOddsOfNewCard
     oldBoardState@(playerHand, dealerFaceUp, removedCards)
     newBoardState@(newPlayerHand, _, _) =
         calculateOddsOf (boardStateToCardsInPlay oldBoardState)
-            (pure $ Vec.last newPlayerHand) 1
+            (pure $ Vec.last newPlayerHand)
 
 
 evaluateSplitDoubleSurrender :: BoardState -> EVAction
@@ -129,7 +142,6 @@ calculateSplit boardState@(playerCards, dealerFaceUp, removedCards) =
         uncurry (*) .
         (
             calculateOddsOfNewCard
-                (playerCards, dealerFaceUp, removedCards)
                 &&&
                 checkForBustCarrier evaluateDoubleSurrender
         )
@@ -142,13 +154,20 @@ calculateSplit boardState@(playerCards, dealerFaceUp, removedCards) =
         uncurry (*) .
         (
             calculateOddsOfNewCard
-                (playerCards, dealerFaceUp, removedCards)
                 &&&
                 checkForBustCarrier evaluateDouble
         )
         <$>
         appendNewCard (slice 0 1 playerCards, dealerFaceUp, removedCards)
     )
+    
+  where
+
+    calculateOddsOfNewCard :: BoardState -> Double
+    calculateOddsOfNewCard
+        newBoardState@(newPlayerHand, _, _) =
+            calculateOddsOf (boardStateToCardsInPlay boardState)
+                (pure $ Vec.last newPlayerHand)
 
 
 calculateDouble :: BoardState -> EV
@@ -157,8 +176,18 @@ calculateDouble boardState =
     Vec.sum $
     uncurry (*) .
     (
-        calculateOddsOfNewCard boardState &&&
-        checkForBustCarrier (\u -> (calculateStand u, Stand))
+        calculateOddsOfNewCard &&&
+        checkForBustCarrier ( (,Stand). calculateStand)
     )
     <$>
     appendNewCard boardState
+
+  where
+    
+    calculateOddsOfNewCard :: BoardState -> Double
+    calculateOddsOfNewCard
+        newBoardState@(newPlayerHand, _, _) =
+            calculateOddsOf (boardStateToCardsInPlay boardState)
+                (pure $ Vec.last newPlayerHand)
+
+

@@ -1,4 +1,4 @@
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections, ApplicativeDo #-}
 
 module CalculateNonSplitBoardStates where
 
@@ -9,8 +9,17 @@ import Data.Vector
 import qualified Data.Vector as Vec
 import CalculateHandValue (checkIfBust)
 import Data.Foldable (Foldable(toList))
-import Data.Set
 import qualified Data.Map.Lazy as Map
+
+
+-- | Creates all board states without a split using a helper function
+-- applied to the initial set of two-card player card combinations.
+
+allNonSplitBoardStates :: Vector Card -> Vector BoardState
+allNonSplitBoardStates cardsInPlay =
+    playerHandsBase >>= appendRemainder
+
+  where
 
 -- Should be modified to generate Set by default, reduce computation somewhat.
 
@@ -20,42 +29,37 @@ import qualified Data.Map.Lazy as Map
 -- | All two card player hands with the second card not less than the
 -- first case, using filter to get rid of empty elements generated
 
-playerHandsBase :: Vector BoardState
-playerHandsBase =
-    flip (liftA2 (,,Vec.empty)) twoToAce $ 
-    Vec.filter (not . Vec.null) $
-    liftA2 createPlayerBases twoToAce twoToAce
+    playerHandsBase :: Vector BoardState
+    playerHandsBase =
+        flip (liftA2 (,,cardsInPlay)) twoToAce $ 
+        Vec.filter (not . Vec.null) $
+        liftA2 createPlayerBases twoToAce twoToAce
 
 -- | Helper function used to generate hands with the first being greater or equal to
 -- the second card.
 
-createPlayerBases :: Card -> Card -> Vector Card
-createPlayerBases firstElement secondElement =
-    if firstElement > secondElement
-        then Vec.empty
-        else pure firstElement `snoc` secondElement
+    createPlayerBases :: Card -> Card -> Vector Card
+    createPlayerBases firstElement secondElement =
+        if firstElement > secondElement
+            then Vec.empty
+            else pure firstElement `snoc` secondElement
 
--- | Creates all board states without a split using a helper function
--- applied to the initial set of two-card player card combinations.
-
-allNonSplitBoardStates :: Vector BoardState
-allNonSplitBoardStates =
-    appendRemainder =<< playerHandsBase
 
 -- | Appends remaining possible hands.
 
 -- Somehow seems unperformant, as though it can be simplified.
 
-appendRemainder :: BoardState -> Vector BoardState
-appendRemainder boardState@(playerCards, dealerFaceUp, removedCards)
-    | 6 == Vec.length playerCards =
-        pure (playerCards, dealerFaceUp, removedCards)
-    | otherwise = boardState `cons` (go boardState =<< twoToAce)
-  where
-    go (playerCards, dealerFaceUp, removedCards) newCard
-        | Vec.last playerCards > newCard ||
-           checkIfBust newPlayerHand =
-            Vec.empty
-        | otherwise = appendRemainder (newPlayerHand, dealerFaceUp, removedCards)
-          where
-            newPlayerHand = playerCards `snoc` newCard
+    appendRemainder :: BoardState -> Vector BoardState
+    appendRemainder boardState@(playerCards, dealerFaceUp, removedCards)
+        | 6 == Vec.length playerCards =
+            pure (playerCards, dealerFaceUp, removedCards)
+        | otherwise = (playerCards, dealerFaceUp, removedCards) `cons` (go (playerCards, dealerFaceUp, removedCards) =<< twoToAce)
+        where
+            go :: BoardState -> Card -> Vector BoardState
+            go boardState@(playerCards, dealerFaceUp, removedCards) newCard
+                | Vec.last playerCards > newCard ||
+                    checkIfBust newPlayerHand =
+                        Vec.empty
+                | otherwise = appendRemainder (newPlayerHand, dealerFaceUp, removedCards)
+                    where
+                        newPlayerHand = playerCards `snoc` newCard
