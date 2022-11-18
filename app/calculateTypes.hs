@@ -63,7 +63,11 @@ data Action
     | Split
     | DoubleAction
     | Surrender
+    | NotApplicable
     deriving (Eq, Ord, Generic, Show, NFData)
+
+instance FromJSON Action
+instance ToJSON Action
 
 
 type BoardState = (PlayerCards, DealerFaceUp, RemovedCards)

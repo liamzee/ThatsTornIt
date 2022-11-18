@@ -36,10 +36,11 @@ executable ThatsTornIt
                       Parallelize
                       CalculateHandValue
                       CalculateNonSplitBoardStates
+                      BoardStatesSeed
                       
-                      ProbabilityCalculator
-                      Types
                       TotalEVTester
+                      Outputter
+                      JSONTypes
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -50,7 +51,6 @@ executable ThatsTornIt
                       bytestring,
                       containers,
                       vector,
-                      criterion,
                       tinyfiledialogs,
                       deepseq,
                       parallel,

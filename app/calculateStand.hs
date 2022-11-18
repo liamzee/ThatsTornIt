@@ -22,6 +22,7 @@ import Data.Vector.Algorithms.Merge (sort)
 import Control.Arrow ((&&&))
 import CalculateTwoToAce (twoToAce)
 import Control.Applicative (liftA2)
+import BoardStatesSeed (seedBoardStates)
 
 
 -- Given a set of player cards, a dealer face up, and removed cards from
@@ -101,13 +102,13 @@ preFilterForDealerFaceUp dealerFaceUp =
 -- The core function of this module.
 
 calculateStand :: BoardState -> EV
-calculateStand boardState = mapStandEV Data.Map.Lazy.! boardState
+calculateStand boardState@(pCards,dFaceUp, rCards) = mapStandEV Data.Map.Lazy.! boardState
   where
 --modified to use calculateStandInner' instead of calculateStandInner
 --during testing.
 
     mapStandEV :: Map BoardState EV
-    mapStandEV = parallelize (allNonSplitBoardStates Vec.empty) calculateStandInner
+    mapStandEV = parallelize allNonSplitBoardStates calculateStandInner
 
 {- attempt to use improved parallelize, which is at least more idiomatic and readable.
 mapStandEV = 

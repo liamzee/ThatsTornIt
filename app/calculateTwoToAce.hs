@@ -3,7 +3,7 @@
 module CalculateTwoToAce where
     
 import CalculateTypes (Card(..))
-import Data.Vector
+import Data.Vector ( Vector )
 
 -- | The twoToAce terms to specify all ranks considered.
 -- Reused by multiple modules.

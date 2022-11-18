@@ -5,8 +5,8 @@ module CalculateDealerHands where
 import CalculateTwoToAce (twoToAce)
 import CalculateTypes (Card (..))
 import Data.Vector
-    ( Vector, snoc, toList,
-    modify, empty )
+    ( Vector, snoc,
+     empty )
 import qualified Data.Vector as Vec
 import Control.Applicative (Applicative(liftA2))
 import CalculateHandValue (checkIfBust, checkForSoft17, handValueOf)

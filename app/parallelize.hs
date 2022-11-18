@@ -82,7 +82,7 @@ parallelize (convertTarget -> target) conversionFunction =
 
 
 
-parallelizeLazy :: NFData a => Vector BoardState -> (BoardState -> a) -> Map BoardState a
+parallelizeLazy :: Vector BoardState -> (BoardState -> a) -> Map BoardState a
 parallelizeLazy (convertTarget -> target) conversionFunction =
 
     runEval $ do

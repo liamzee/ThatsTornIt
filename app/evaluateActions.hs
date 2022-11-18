@@ -21,6 +21,7 @@ import qualified Data.List
 import CalculateNonSplitBoardStates (allNonSplitBoardStates)
 import Control.Monad.ST (runST)
 import Data.Vector.Algorithms.Merge (sort)
+import BoardStatesSeed (seedBoardStates)
 
 
 --Current probable errors in how double and split are calculated.
@@ -30,14 +31,14 @@ import Data.Vector.Algorithms.Merge (sort)
 --Note that evalHitStand will be called by calculateHit.
 
 evaluateHitStand :: BoardState -> EVAction
-evaluateHitStand boardState =
+evaluateHitStand boardState@(playerCards,dealerFaceUp,removedCards) =
     evaluateHitStandMap Map.! boardState
   where
 --The memoization of the algorithm run on all valid states.
 
     evaluateHitStandMap :: Map BoardState EVAction
     evaluateHitStandMap =
-        parallelizeLazy (allNonSplitBoardStates Vec.empty) evaluateHitStandInner
+        parallelizeLazy allNonSplitBoardStates evaluateHitStandInner
 
 --Note that evaluateHitStandInner effectively calls itself, via evaluateHitStand
 --It introduces a base-state explicitly, which helps to limit the number of computations required.

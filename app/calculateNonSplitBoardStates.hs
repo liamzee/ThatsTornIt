@@ -15,8 +15,8 @@ import qualified Data.Map.Lazy as Map
 -- | Creates all board states without a split using a helper function
 -- applied to the initial set of two-card player card combinations.
 
-allNonSplitBoardStates :: Vector Card -> Vector BoardState
-allNonSplitBoardStates cardsInPlay =
+allNonSplitBoardStates :: Vector BoardState
+allNonSplitBoardStates =
     playerHandsBase >>= appendRemainder
 
   where
@@ -31,7 +31,7 @@ allNonSplitBoardStates cardsInPlay =
 
     playerHandsBase :: Vector BoardState
     playerHandsBase =
-        flip (liftA2 (,,cardsInPlay)) twoToAce $ 
+        flip (liftA2 (,,Vec.empty)) twoToAce $ 
         Vec.filter (not . Vec.null) $
         liftA2 createPlayerBases twoToAce twoToAce
 
@@ -53,10 +53,10 @@ allNonSplitBoardStates cardsInPlay =
     appendRemainder boardState@(playerCards, dealerFaceUp, removedCards)
         | 6 == Vec.length playerCards =
             pure (playerCards, dealerFaceUp, removedCards)
-        | otherwise = (playerCards, dealerFaceUp, removedCards) `cons` (go (playerCards, dealerFaceUp, removedCards) =<< twoToAce)
+        | otherwise = boardState `cons` (go =<< twoToAce)
         where
-            go :: BoardState -> Card -> Vector BoardState
-            go boardState@(playerCards, dealerFaceUp, removedCards) newCard
+            go :: Card -> Vector BoardState
+            go newCard
                 | Vec.last playerCards > newCard ||
                     checkIfBust newPlayerHand =
                         Vec.empty
