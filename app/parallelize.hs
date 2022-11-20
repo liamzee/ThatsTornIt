@@ -8,7 +8,7 @@ import Control.DeepSeq (NFData, force)
 import Data.Map.Lazy ( union, Map, fromSet, fromList )
 import Control.Parallel.Strategies (runEval, rpar, rseq, using, evalList, evalTuple2, r0, parList)
 import qualified Data.Sequence as Sequ
-import CalculateTypes (BoardState, Card, EV, EVAction)
+import CalculateTypes (BoardState, Card, EV, EVAction, SplitBoardState, PlayerCards)
 import CalculateNonSplitBoardStates (allNonSplitBoardStates)
 import Data.Foldable (Foldable(toList))
 import Data.Sequence (Seq)
@@ -29,8 +29,8 @@ parallelFromSet chunkSize f s
     | otherwise = 
         Map.unions (parallelFromSet chunkSize f <$> Set.splitRoot s `using` parList rseq)
 
-parallelize :: Vector BoardState -> (BoardState -> EV) -> Map BoardState EV
-parallelize (convertTarget -> target) conversionFunction =
+parallelize :: Set BoardState -> (BoardState -> EV) -> Map BoardState EV
+parallelize target conversionFunction =
 
     runEval $ do
         let (set1, set2) =
@@ -82,8 +82,39 @@ parallelize (convertTarget -> target) conversionFunction =
 
 
 
-parallelizeLazy :: Vector BoardState -> (BoardState -> a) -> Map BoardState a
-parallelizeLazy (convertTarget -> target) conversionFunction =
+parallelizeLazy :: Set BoardState -> (BoardState -> a) -> Map BoardState a
+parallelizeLazy target conversionFunction =
+
+    runEval $ do
+        let (set1, set2) =
+                Set.splitAt (div (length target) 2) target
+        let (set11, set12) = Set.splitAt (div (length set1) 2) set1
+        let (set21, set22) = Set.splitAt (div (length set2) 2) set2
+        let (set111, set112) = Set.splitAt (div (length set11) 2) set11
+        let (set121, set122) = Set.splitAt (div (length set12) 2) set12
+        let (set211, set212) = Set.splitAt (div (length set21) 2) set21
+        let (set221, set222) = Set.splitAt (div (length set22) 2) set22
+
+        map1111 <- rpar $ fromSet conversionFunction set111
+        map1112 <- rpar $ fromSet conversionFunction set112
+        map1121 <- rpar $ fromSet conversionFunction set121
+        map1122 <- rpar $ fromSet conversionFunction set122
+
+        map1211 <- rpar $ fromSet conversionFunction set211
+        map1212 <- rpar $ fromSet conversionFunction set212
+        map1221 <- rpar $ fromSet conversionFunction set221
+        map1222 <- rpar $ fromSet conversionFunction set222
+        
+
+        rseq map1111 >> rseq map1112 >> rseq map1121 >> rseq map1122
+        rseq map1211 >> rseq map1212 >> rseq map1221 >> rseq map1222
+        pure $ ((map1111 `union` map1112) `union` (map1121 `union` map1122)) `union`
+            (map1211 `union` map1212) `union` (map1221 `union` map1222)
+
+
+
+parallelizeLazySplit :: Set PlayerCards -> (PlayerCards -> EV) -> Map PlayerCards EV
+parallelizeLazySplit target conversionFunction =
 
     runEval $ do
         let (set1, set2) =

@@ -10,4 +10,4 @@ seedBoardStates = do
     dealerFaceUp <- twoToAce
     firstPlayerCard <- twoToAce
     secondPlayerCard <- twoToAce
-    pure (pure firstPlayerCard, dealerFaceUp, Vec.empty)
+    pure (pure firstPlayerCard, dealerFaceUp)

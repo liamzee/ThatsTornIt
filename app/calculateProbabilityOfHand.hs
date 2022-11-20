@@ -3,7 +3,7 @@ module CalculateProbabilityOfHand where
 
 import Data.Vector
 import qualified Data.Vector as Vec
-import CalculateTypes (Card (..))
+import CalculateTypes (Card (..), BoardState)
 
 -- | Recursive tail-calling function that multiplies an accumulator to
 -- multiply an initial chance by the odds of the card vector
@@ -54,6 +54,8 @@ calculateOddsOf cardsInPlay handToEvaluate =
 
 -- Combines preprocess boardstate for computation by calculateOddsOf.
 
-boardStateToCardsInPlay :: (Vector Card, Card, Vector Card) -> Vector Card
-boardStateToCardsInPlay (playerCards, dealerFaceUp, removedCards) =
-        playerCards <> removedCards `snoc` dealerFaceUp
+--Note: this is designed for dealer hands, not playerhands.
+
+boardStateToCardsInPlay :: BoardState -> Vector Card
+boardStateToCardsInPlay (playerCards, dealerFaceUp) =
+        playerCards `snoc` dealerFaceUp

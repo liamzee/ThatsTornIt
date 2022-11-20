@@ -25,7 +25,7 @@ checkEVofGame =
 
 
 applyApplicableEvaluation :: BoardState -> EV
-applyApplicableEvaluation boardState@(playerCards, dealerFaceUp, removedCards)=
+applyApplicableEvaluation boardState@(playerCards, dealerFaceUp)=
     fst  $ case (playerCards Data.Vector.! 0 , playerCards Data.Vector.! 1) of
         (a , b) | a == b ->  evaluateSplitDoubleSurrender
         _ -> evaluateDoubleSurrender
@@ -59,7 +59,7 @@ listOfStartingHands =  Vec.filter ((==2). Vec.length . (\(a,b,c) -> a)) (allNonS
 --}
 
 probabilityOfStartingHandsSplitter :: BoardState -> Double
-probabilityOfStartingHandsSplitter boardState@(playerCards, dealerFaceUp, removedCards) =
+probabilityOfStartingHandsSplitter boardState@(playerCards, dealerFaceUp) =
     case (playerCards Data.Vector.! 0 , playerCards Data.Vector.! 1) of
         (a , b) | a == b -> calculateOddsOf empty (snoc playerCards dealerFaceUp)
         _ -> 2 * calculateOddsOf empty (snoc playerCards dealerFaceUp)
@@ -71,6 +71,6 @@ listOfStartingHands =  do
     playerSecondCard <- twoToAce
     if playerFirstCard > playerSecondCard
         then Vec.empty
-        else pure (playerFirstCard `Vec.cons` pure playerSecondCard, dealerCard, Vec.empty)
+        else pure (playerFirstCard `Vec.cons` pure playerSecondCard, dealerCard)
 
 --}

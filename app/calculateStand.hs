@@ -14,12 +14,11 @@ import CalculateProbabilityOfHand
 import Data.Map.Lazy ((!), Map)
 import Parallelize (parallelize)
 import qualified Data.Set as Set
-import Data.Bifunctor (bimap)
 import CalculateNonSplitBoardStates (allNonSplitBoardStates)
 import qualified Data.Vector.Mutable as Vm
 import Control.Monad.ST (runST)
 import Data.Vector.Algorithms.Merge (sort)
-import Control.Arrow ((&&&))
+import Control.Arrow ((&&&),(***))
 import CalculateTwoToAce (twoToAce)
 import Control.Applicative (liftA2)
 import BoardStatesSeed (seedBoardStates)
@@ -81,7 +80,7 @@ probabilityOfEvent :: BoardState -> Vector (Vector Card, Int) -> Double
 probabilityOfEvent boardState listOfHands =
     Vec.sum $
     uncurry (*) .
-    bimap (calculateOddsOfDealerHand boardState) fromIntegral <$>
+    (calculateOddsOfDealerHand boardState *** fromIntegral) <$>
         listOfHands
 
 -- Calls a general-purpose odds calculator for the odds of a player hand.
@@ -102,21 +101,15 @@ preFilterForDealerFaceUp dealerFaceUp =
 -- The core function of this module.
 
 calculateStand :: BoardState -> EV
-calculateStand boardState@(pCards,dFaceUp, rCards) = mapStandEV Data.Map.Lazy.! boardState
+calculateStand = (parallelize allNonSplitBoardStates calculateStandInner Data.Map.Lazy.!)
   where
---modified to use calculateStandInner' instead of calculateStandInner
---during testing.
-
-    mapStandEV :: Map BoardState EV
-    mapStandEV = parallelize allNonSplitBoardStates calculateStandInner
-
 {- attempt to use improved parallelize, which is at least more idiomatic and readable.
 mapStandEV = 
     parallelFromSet 10 calculateStandInner' (Set.fromList $ Data.Foldable.toList Parallelize.target)
 -}
 
     calculateStandInner :: BoardState -> EV
-    calculateStandInner boardState@(playerCards, dealerFaceUp, removedCards) =
+    calculateStandInner boardState@(playerCards, dealerFaceUp) =
 
             eVWin
         *   winProbability
@@ -177,8 +170,8 @@ mapStandEV =
 -- | tie if there's a dealer natural.
 
         naturalTieFilter :: Vector Card -> Bool
-        naturalTieFilter item =
-            isNatural item
+        naturalTieFilter =
+            isNatural
 
 -- | tie if the opponent has a six card charlie of equal value.
 
@@ -194,8 +187,8 @@ mapStandEV =
         sixCardCharlieLossFilter :: Vector Card -> Bool
         sixCardCharlieLossFilter item =
             isNatural item ||
-                6 == Vec.length item &&
-            handValueOf playerCards < handValueOf item
+                (6 == Vec.length item &&
+            handValueOf playerCards < handValueOf item)
 
 -- | tie if the opponent has a non-six card charlie hand,
 -- non-natural hand of equal value.

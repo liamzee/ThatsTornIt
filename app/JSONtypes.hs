@@ -6,12 +6,12 @@ import Data.Vector (Vector)
 import GHC.Generics (Generic)
 import Data.Aeson (FromJSON, ToJSON)
 
-data TopLevels = TopLevel PlayerCards DealerFaceUp EVAction EVAction (Vector Entries) deriving Generic
+data TopLevels = TopLevel PlayerCards DealerFaceUp EVAction EVAction [Entries] deriving Generic
 
 instance FromJSON TopLevels
 instance ToJSON TopLevels
 
-data Entries = Entry DealerFaceUp PlayerCards (EV, Action) deriving Generic
+data Entries = Entry DealerFaceUp PlayerCards (EV, Action) deriving (Generic, Ord, Eq)
 
 instance FromJSON Entries
 instance ToJSON Entries

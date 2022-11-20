@@ -70,10 +70,12 @@ instance FromJSON Action
 instance ToJSON Action
 
 
-type BoardState = (PlayerCards, DealerFaceUp, RemovedCards)
+type BoardState = (PlayerCards, DealerFaceUp)
 type PlayerCards = Vector Card
 type DealerFaceUp = Card
 type RemovedCards = Vector Card
+
+type SplitBoardState = (PlayerCards, DealerFaceUp, RemovedCards)
 
 type EV = Double
 type EVAction = (EV, Action)

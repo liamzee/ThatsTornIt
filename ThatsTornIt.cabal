@@ -37,6 +37,7 @@ executable ThatsTornIt
                       CalculateHandValue
                       CalculateNonSplitBoardStates
                       BoardStatesSeed
+                      EvaluateSplit
                       
                       TotalEVTester
                       Outputter
@@ -44,16 +45,16 @@ executable ThatsTornIt
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base ^>=4.16.1.0,
-                      aeson,
-                      time,
-                      text,
-                      bytestring,
-                      containers,
-                      vector,
-                      tinyfiledialogs,
-                      deepseq,
-                      parallel,
-                      vector-algorithms
+    build-depends:    base
+                      , aeson
+                      , time
+                      , text
+                      , bytestring
+                      , containers
+                      , vector
+                      , tinyfiledialogs
+                      , deepseq
+                      , parallel
+                      , vector-algorithms
     hs-source-dirs:   app
     default-language: Haskell2010
