@@ -1,44 +1,35 @@
-{-# LANGUAGE OverloadedStrings, LambdaCase, PatternSynonyms #-}
-{-# LANGUAGE OverloadedLists, DeriveGeneric, DeriveAnyClass #-}
-{-# LANGUAGE ViewPatterns, TupleSections, ApplicativeDo #-}
-
-{- Currently requires clean-up to move to the new algorithm. -}
-
-{- Split calculation is also hashed, and hence requires fixing. -}
-
-{- 
-
-STANDING AND IMPORTANT QUESTION:
-
-DOES MY ALGORITHM ACCOUNT FOR PLAYER BUST CASES?
-
--}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Main where
 
 import Data.Time (getCurrentTime)
-import Data.Aeson ( FromJSON, ToJSON, encode )
-import qualified Data.ByteString.Lazy as LB
---import Graphics.UI.TinyFileDialogs ( saveFileDialog )
-import Data.Text ( Text, unpack )
+import Data.Aeson ( encode )
 import TotalEVTester (checkEVofGame)
---import Outputter (packedJSON)
-import Data.Vector (Vector)
-import CalculateTypes (Card)
-import qualified Data.Vector as Vec
-import CalculateNonSplitBoardStates (allNonSplitBoardStates)
-import CalculateDealerHands (countedDealerHands)
-import qualified Data.Set
-import Control.Monad.ST (runST)
-import Data.Vector.Algorithms.Merge (sort)
-import EvaluateSplit (allPossibleRemovedCards, setForSplitEVStands')
-import qualified Data.Foldable
-import CalculateHandValue (handValueOf)
-import EvaluateSplit (setForSplitEVStands)
-import qualified Data.Map as Map
+import CalculateTypes (Card (..), EV)
 import Outputter (packedJSON)
 import EvaluateSplit (benchMarkEV)
-import Data.Time (getCurrentTime)
+import qualified Data.ByteString as B 
+import Flat ( flat )
+import Flat.Run (unflat)
+import Flat.Instances.Vector ()
+import Data.Either (fromLeft, fromRight)
+import EvaluateSplit (firstSplit)
+import Data.Vector (Vector, fromList)
+import Data.Map (Map, lookup, fromSet)
+import qualified Data.List
+import qualified Data.Vector as Vec
+import CalculateNonSplitBoardStates (allPlayerHandsIncludingBust)
+import qualified Data.Set as Set
+import CalculateDealerHands (countedDealerHandsIncludingBust)
+import RemovedCardsGenerator ( secondGameEVMap)
+import Control.DeepSeq (force)
+import Control.Parallel.Strategies (using)
+import Parallelize (splitEvenlySet)
+import qualified Data.Set
+import Data.Set (Set)
+import EvaluateSplit (parallelizeMapping)
+import qualified Data.ByteString.Lazy as LB
+import SplitOutputter (packedJSONSplits)
 
 --Rebuilt around 3 main memoizations, namely the
 --standEV list, the player hands list, and
@@ -46,32 +37,25 @@ import Data.Time (getCurrentTime)
 
 main :: IO ()
 main = do
---    print TotalEVTester.checkEVofGame
+    --print TotalEVTester.checkEVofGame
     --tfd <- saveFileDialog "" "" [""] "" <&> (unpack . fromMaybe "")
-    print TotalEVTester.checkEVofGame
-    print =<< getCurrentTime
-    --print $ Data.Set.size setForSplitEVStands
+    --print $ benchMarkEV
     --print $ Data.Set.size setForSplitEVStands'
-    print $ benchMarkEV
     print =<< getCurrentTime
-    {-LB.writeFile
-        "C:\\Users\\Liam\\Desktop\\welp.json"
-        packedJSON
-    --}
+    --B.writeFile "flatStore.flat" $ flat secondGameEVMap
+    store <- fromRight (error "failed to decompress code") . unflat <$> B.readFile "flatStore.flat"
+    --print $ TotalEVTester.checkEVofGame store
+    --print =<< getCurrentTime
+    LB.writeFile
+        "C:\\Users\\Liam\\Desktop\\splitsNamed.json"
+        (packedJSONSplits store)
+    LB.writeFile
+        "C:\\Users\\Liam\\Desktop\\nonSplitsNamed.json"
+        (packedJSON store)
 
-{-
-possibleRemovedCards :: Vector (Vector Card)
-possibleRemovedCards = do
-  (playerCards, dealerFaceUp) <- Vec.fromList . Data.Set.toList . Data.Set.fromList  . Vec.toList $ (\(a,b) -> (vectorSort a,b)) <$> allNonSplitBoardStates
-  (applicableDealerHands, notChecked) <- Vec.filter ((dealerFaceUp ==). Vec.head . fst) countedDealerHands
-  pure (playerCards <> applicableDealerHands)
-
-
-vectorSort :: Ord a => Vector a -> Vector a
-vectorSort hand = runST $ do
-      mvec <- Vec.thaw hand
-      sort mvec
-      Vec.freeze mvec
-
-
--}
+tester :: Map (Card, Card, Vector Card) EV -> IO ()
+tester mapping = go Two Two
+  where
+    go Ace Ace = putStrLn "Ace Ace" >> print (firstSplit Ace Ace mapping)
+    go a Ace = putStrLn (show a <> show Ace) >> print (firstSplit a Ace mapping) >> go (succ a) Two
+    go a b = putStrLn ((show a) <> (show b)) >> print (firstSplit a b mapping) >> go (a) (succ b)

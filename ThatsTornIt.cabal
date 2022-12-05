@@ -36,12 +36,14 @@ executable ThatsTornIt
                       Parallelize
                       CalculateHandValue
                       CalculateNonSplitBoardStates
-                      BoardStatesSeed
                       EvaluateSplit
+                      RemovedCardsGenerator
+                      SecondSplitCalculator
                       
                       TotalEVTester
                       Outputter
                       JSONTypes
+                      SplitOutputter
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
@@ -56,5 +58,6 @@ executable ThatsTornIt
                       , deepseq
                       , parallel
                       , vector-algorithms
+                      , flat
     hs-source-dirs:   app
     default-language: Haskell2010

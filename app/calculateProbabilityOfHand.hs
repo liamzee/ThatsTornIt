@@ -1,9 +1,8 @@
-{-# LANGUAGE ViewPatterns #-}
 module CalculateProbabilityOfHand where
 
 import Data.Vector
 import qualified Data.Vector as Vec
-import CalculateTypes (Card (..), BoardState)
+import CalculateTypes (Card (..), BoardState, EV, Probability)
 
 -- | Recursive tail-calling function that multiplies an accumulator to
 -- multiply an initial chance by the odds of the card vector
@@ -13,7 +12,7 @@ import CalculateTypes (Card (..), BoardState)
 -- accumulator, and second, the cards in play have to be
 -- produced from a boardstate first.
 
-calculateOddsOf :: Vector Card -> Vector Card -> Double
+calculateOddsOf :: Vector Card -> Vector Card -> Probability
 calculateOddsOf cardsInPlay handToEvaluate =
     go 1 indexInEvaluation
   where
@@ -23,7 +22,7 @@ calculateOddsOf cardsInPlay handToEvaluate =
     indexInEvaluation :: Int
     indexInEvaluation = Vec.length cardsInPlay
     
-    go :: Double -> Int -> Double
+    go :: Probability -> Int -> Probability
     go acc index
         | index == Vec.length totalVector = acc
         | otherwise = go ((*) acc $! calculateDrawChances index) (index+1)
@@ -31,7 +30,7 @@ calculateOddsOf cardsInPlay handToEvaluate =
 -- | Fairly straightforward odds calculator for the odds of
 -- drawing a single card.
 
-    calculateDrawChances :: Int -> Double
+    calculateDrawChances :: Int -> Probability
     calculateDrawChances index =
         let card = totalVector ! index
             selectedVector = Vec.take index totalVector

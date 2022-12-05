@@ -4,7 +4,7 @@
 
 module CalculateStand where
 
-import CalculateTypes (BoardState, EV, Card (..))
+import CalculateTypes (BoardState, EV, Card (..), Probability, PlayerCards)
 import CalculateDealerHands
 import qualified Data.Vector as Vec hiding (elem)
 import Data.Vector hiding (elem)
@@ -21,7 +21,8 @@ import Data.Vector.Algorithms.Merge (sort)
 import Control.Arrow ((&&&),(***))
 import CalculateTwoToAce (twoToAce)
 import Control.Applicative (liftA2)
-import BoardStatesSeed (seedBoardStates)
+import qualified Data.Map
+import qualified Data.List
 
 
 -- Given a set of player cards, a dealer face up, and removed cards from
@@ -76,7 +77,7 @@ isNatural = (`elem` fromList [[Ace, TenJackQueenKing], [TenJackQueenKing, Ace]])
 -- | The following code assumes that preFilterForDealerFaceUp has already triggered,
 -- and compresses the Vector Card , Int tuple into a single figure to sum up.
 
-probabilityOfEvent :: BoardState -> Vector (Vector Card, Int) -> Double
+probabilityOfEvent :: BoardState -> Vector (Vector Card, Int) -> Probability
 probabilityOfEvent boardState listOfHands =
     Vec.sum $
     uncurry (*) .
@@ -87,7 +88,7 @@ probabilityOfEvent boardState listOfHands =
 -- This one preprocesses because preFilterForDealerFaceUp assigns the first card
 -- a probability of one, and all other first cards a probability of zero.
 
-calculateOddsOfDealerHand :: BoardState -> Vector Card -> Double
+calculateOddsOfDealerHand :: BoardState -> Vector Card -> Probability
 calculateOddsOfDealerHand boardState assessedHand =
     calculateOddsOf (boardStateToCardsInPlay boardState)
         (Vec.tail assessedHand)
@@ -103,10 +104,6 @@ preFilterForDealerFaceUp dealerFaceUp =
 calculateStand :: BoardState -> EV
 calculateStand = (parallelize allNonSplitBoardStates calculateStandInner Data.Map.Lazy.!)
   where
-{- attempt to use improved parallelize, which is at least more idiomatic and readable.
-mapStandEV = 
-    parallelFromSet 10 calculateStandInner' (Set.fromList $ Data.Foldable.toList Parallelize.target)
--}
 
     calculateStandInner :: BoardState -> EV
     calculateStandInner boardState@(playerCards, dealerFaceUp) =
@@ -119,16 +116,16 @@ mapStandEV =
 
       where
 
-        winProbability :: Double
+        winProbability :: Probability
         winProbability =
             1 - tieProbability - lossProbability
     
-        evLoss :: Double
+        evLoss :: EV
         evLoss = -1
     
 -- If natural, then the EV return on win is 1.5.
 
-        eVWin :: Double
+        eVWin :: EV
         eVWin 
             | isNatural playerCards =
                 1.5
@@ -136,7 +133,7 @@ mapStandEV =
 
 -- A splitter function to evaluate player cases.
 
-        tieProbability :: Double
+        tieProbability :: Probability
         tieProbability
             | isNatural playerCards =
                 probabilityUnder naturalTieFilter
@@ -147,7 +144,7 @@ mapStandEV =
 
 -- Basically a splitter function that feeds the boardState to a probabilityOfEvent calculator.
 
-        lossProbability :: Double
+        lossProbability :: Probability
         lossProbability
             | isNatural playerCards =
                 0
@@ -158,7 +155,7 @@ mapStandEV =
 
 -- a function to remove repeated use of filters in win / loss probability splitter.
 
-        probabilityUnder :: (Vector Card -> Bool) -> EV
+        probabilityUnder :: (Vector Card -> Bool) -> Probability
         probabilityUnder givenFilter =
             probabilityOfEvent boardState $ Vec.filter (givenFilter . fst) $
                 preFilterForDealerFaceUp dealerFaceUp

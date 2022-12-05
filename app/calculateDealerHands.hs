@@ -18,10 +18,9 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 
 
-
-uniqueDealerHandsIncludingBust :: Set (Vector Card)
-uniqueDealerHandsIncludingBust =
-    Set.fromList . makeNumber . vectorSort $ internalSort <$> dealerHands
+countedDealerHandsIncludingBust :: Vector (Vector Card, Int)
+countedDealerHandsIncludingBust =
+    makeNumber . vectorSort $ internalSort <$> dealerHands
   where
 -- | The collection of dealer hands, excluding bust dealer hands.
 -- Since we are not computing hands against which the player wins,
@@ -51,12 +50,7 @@ uniqueDealerHandsIncludingBust =
 
         | 6 == Vec.length hand || checkForSoft17 hand =
             pure hand
-        | otherwise = do
-            newCard <- twoToAce
-            let newHand = hand `snoc` newCard
-            if checkIfBust newHand
-                then pure newHand
-                else appendToCore newHand
+        | otherwise = twoToAce >>= appendToCore . snoc hand
 
 -- | Direct mutable vector sort, not really that much faster than
 -- transforming the target into a list.
@@ -81,12 +75,13 @@ uniqueDealerHandsIncludingBust =
 -- Will cause problems if you have empty groups.
 
 --simplified and more readable version, courtesy FP discord.
-    makeNumber :: Vector (Vector Card) -> [Vector Card]
-    makeNumber = fmap Vec.head . Vec.group
+    makeNumber :: Vector (Vector Card) -> Vector (Vector Card, Int)
+    makeNumber = Vec.fromList . fmap (Vec.head &&& Vec.length) . Vec.group
+
 
 countedDealerHands :: Vector (Vector Card, Int)
 countedDealerHands =
-    makeNumber $ vectorSort $ internalSort <$> dealerHands
+    makeNumber . vectorSort $ internalSort <$> dealerHands
   where
 
 -- | The collection of dealer hands, excluding bust dealer hands.

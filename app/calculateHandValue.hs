@@ -33,7 +33,7 @@ checkIfBust hand =
 handValueOf :: Vector Card -> Int
 handValueOf hand =
     let rawValue = Vec.sum $ fromEnum <$> hand 
-        aceCount = Vec.length $ Vec.filter (== Ace) hand
+        aceCount = Vec.length $ Vec.filter (==Ace) hand
     in downConvert rawValue aceCount
   where
     downConvert :: Int -> Int -> Int

@@ -1,0 +1,33 @@
+packages: .
+
+-- So that we're able to use llvm-12
+allow-newer:
+  accelerate-llvm:llvm-hs,
+  accelerate-llvm:llvm-hs-pure,
+  accelerate-llvm-native:llvm-hs,
+  accelerate-llvm-native:llvm-hs-pure
+
+-- There's a missing upper bound for libffi on accelerate-llvm-native, so we provide it here
+constraints:
+  libffi <= 0.1
+
+-- llvm12 support
+source-repository-package
+  type: git
+  location: https://github.com/llvm-hs/llvm-hs
+  tag: llvm-12
+  subdir: llvm-hs llvm-hs-pure
+
+-- llvm12 support
+source-repository-package
+  type: git
+  location: https://github.com/AccelerateHS/accelerate-llvm
+  tag: master
+  subdir: accelerate-llvm accelerate-llvm-native accelerate-llvm-ptx
+
+-- llvm12 support
+source-repository-package
+  type: git
+  location: https://github.com/AccelerateHS/accelerate
+  tag: master
+  post-checkout-command: bash -c "! git submodule update --init --recursive"

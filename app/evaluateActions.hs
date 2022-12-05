@@ -5,7 +5,7 @@ module EvaluateActions where
 import CalculateTypes
     ( Action(Surrender, Split, DoubleAction, Hit, Stand),
       BoardState,
-      EVAction, EV )
+      EVAction, EV, Probability, Card )
 import CalculateStand
     ( calculateStand)
 import qualified Data.Vector as Vec
@@ -21,7 +21,7 @@ import qualified Data.List
 import CalculateNonSplitBoardStates (allNonSplitBoardStates)
 import Control.Monad.ST (runST)
 import Data.Vector.Algorithms.Merge (sort)
-import BoardStatesSeed (seedBoardStates)
+import EvaluateSplit (firstSplit)
 
 
 --Current probable errors in how double and split are calculated.
@@ -59,7 +59,7 @@ evaluateHitStandInner boardState@(playerHands, dealerFaceUp)
         appendNewCard boardState
 
     
-    calculateOddsOfNewCard :: BoardState -> Double
+    calculateOddsOfNewCard :: BoardState -> Probability
     calculateOddsOfNewCard
         (newPlayerHand, dealerFaceUp) =
             calculateOddsOf (boardStateToCardsInPlay boardState)
@@ -90,7 +90,7 @@ appendNewCard boardState@(playerCards, dealerFaceUp) =
     (,dealerFaceUp) . snoc playerCards <$> twoToAce
 
 
-calculateOddsOfNewCard :: BoardState -> BoardState -> Double
+calculateOddsOfNewCard :: BoardState -> BoardState -> Probability
 calculateOddsOfNewCard
     oldBoardState@(playerHand, dealerFaceUp)
     newBoardState@(newPlayerHand, otherDealerFaceUp) =
@@ -98,11 +98,11 @@ calculateOddsOfNewCard
             (pure $ Vec.last newPlayerHand)
 
 
-evaluateSplitDoubleSurrender :: BoardState -> EVAction
-evaluateSplitDoubleSurrender boardState =
+evaluateSplitDoubleSurrender :: Map (Card, Card, Vector Card) EV -> BoardState -> EVAction
+evaluateSplitDoubleSurrender mapping boardState@(playerCards, dealerFaceUp) =
     maximum
         [
-            (calculateSplit boardState, Split),
+            calculateSplit mapping boardState,
             (calculateDouble boardState, DoubleAction),
             surrender,
             evaluateHitStand boardState
@@ -129,9 +129,11 @@ surrender = (-0.50, Surrender)
 
 -- note that this is a shoddy hack, i.e, it estimates the results based on a constant playerstate, instead of calculating precisely.
 -- also note that on the second split, it's been confirmed you can't split if you get the same cards again.
-calculateSplit :: BoardState -> EV
-calculateSplit boardState@(playerCards, dealerFaceUp) = 
-    Vec.sum 
+calculateSplit :: Map (Card, Card, Vector Card) EV -> BoardState -> EVAction
+calculateSplit mapping boardState@(playerCards, dealerFaceUp) = 
+    firstSplit (Vec.head playerCards) dealerFaceUp mapping
+
+{-}    Vec.sum 
     (
         uncurry (*) .
         (
@@ -157,12 +159,12 @@ calculateSplit boardState@(playerCards, dealerFaceUp) =
     
   where
 
-    calculateOddsOfNewCard :: BoardState -> Double
+    calculateOddsOfNewCard :: BoardState -> Probability
     calculateOddsOfNewCard
         newBoardState@(newPlayerHand, dealerFaceUp) =
             calculateOddsOf (boardStateToCardsInPlay boardState)
                 (pure $ Vec.last newPlayerHand)
-
+--}
 
 calculateDouble :: BoardState -> EV
 calculateDouble boardState = 
@@ -178,7 +180,7 @@ calculateDouble boardState =
 
   where
     
-    calculateOddsOfNewCard :: BoardState -> Double
+    calculateOddsOfNewCard :: BoardState -> Probability
     calculateOddsOfNewCard
         newBoardState@(newPlayerHand, dealerFaceUp) =
             calculateOddsOf (boardStateToCardsInPlay boardState)

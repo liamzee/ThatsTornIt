@@ -4,8 +4,10 @@ module CalculateTypes where
 
 import Control.Parallel.Strategies (NFData)
 import GHC.Generics (Generic)
-import Data.Vector ( Vector )
+import Data.Vector
 import Data.Aeson ( FromJSON, ToJSON )
+import Flat
+import Data.Ratio (Ratio)
 
 -- | Card type.
 
@@ -20,7 +22,7 @@ data Card
     | Nine
     | TenJackQueenKing
     | Ace
-    deriving (Eq, Ord, Generic, Show, NFData)
+    deriving (Eq, Ord, Generic, Show, NFData, Flat)
 
 instance Enum Card where
     fromEnum :: Card -> Int
@@ -48,7 +50,6 @@ instance Enum Card where
         9 -> Nine
         10 -> TenJackQueenKing
         11 -> Ace
-
 
 instance FromJSON Card
 instance ToJSON Card
@@ -78,4 +79,5 @@ type RemovedCards = Vector Card
 type SplitBoardState = (PlayerCards, DealerFaceUp, RemovedCards)
 
 type EV = Double
+type Probability = Double
 type EVAction = (EV, Action)
